@@ -127,8 +127,28 @@ src/coalres/
 tests/                     41 tes terhadap workbook, LAS, dan sertifikat asli
 ```
 
-Belum dibangun (menunggu Phase 0 dikonfirmasi): `seams`, `quality`, `topo`,
-`estimate`, `classify`, `rpeee`, `report`.
+Belum dibangun: `quality`, `topo`, `estimate`, `classify`, `rpeee`, `report`.
+`seams` sudah dibangun setelah `coal_thickness_source` dan `core_loss_treatment`
+dikonfirmasi.
+
+## Keputusan yang sudah dikunci
+
+| Setelan | Nilai | Alasan |
+|---|---|---|
+| `coal_thickness_source` | `lithology` | Konvensi Minex — agar sebanding dengan model terdahulu |
+| `core_loss_treatment` | `as_coal` | Konvensi Minex |
+
+**Konsekuensi yang dilaporkan, bukan disembunyikan.** Minex menerima tebal dari
+tabel litologi dan kualitas dari tabel komposit tanpa memeriksa bahwa keduanya
+menutupi interval yang sama; ketidakcocokan itu tidak memunculkan peringatan di
+sana. Modul `seams` menghitung angka yang sama dengan Minex, lalu menerbitkan
+selisihnya lewat `thickness_quality_reconciliation()`.
+
+**Core loss dibatasi pada atribusi geolog.** `as_coal` hanya berlaku untuk core
+loss yang kolom `Seam`-nya dinamai. Core loss di luar amplop seam selalu waste.
+Pada DH09_05C1 ada 0,445 m core loss di batuan penutup dan interburden
+(70,070–70,270 dan 83,470–83,715) yang akan salah terhitung sebagai batubara
+tanpa batasan ini.
 
 ## Tes
 

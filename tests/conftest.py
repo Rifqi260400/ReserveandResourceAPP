@@ -34,6 +34,7 @@ def base_config_dict(tmp_path, workbook_dir) -> dict:
         },
         "authoritative_coordinate_source": "collar_ts",
         "coal_thickness_source": "lithology",
+        "core_loss_treatment": "as_coal",
         "geological_condition": "moderat",
         "geological_condition_justification": JUSTIFICATION,
         "classification_radii_m": {

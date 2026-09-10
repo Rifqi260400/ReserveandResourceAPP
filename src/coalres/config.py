@@ -18,6 +18,7 @@ from .errors import ConfigError
 GeologicalCondition = Literal["sederhana", "moderat", "kompleks"]
 CoordinateSource = Literal["collar_ts", "bhc_gps"]
 ThicknessSource = Literal["lithology", "sampling"]
+CoreLossTreatment = Literal["as_coal", "as_waste", "exclude"]
 RDBasis = Literal["in_situ", "air_dried", "as_received", "unknown"]
 EstimationMethod = Literal["voronoi", "circular"]
 
@@ -126,6 +127,7 @@ class Config(_Strict):
 
     authoritative_coordinate_source: CoordinateSource
     coal_thickness_source: ThicknessSource
+    core_loss_treatment: CoreLossTreatment
 
     geological_condition: GeologicalCondition
     geological_condition_justification: str

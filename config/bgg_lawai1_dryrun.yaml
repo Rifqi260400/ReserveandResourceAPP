@@ -6,6 +6,7 @@ paths:
   output_dir: output
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
+core_loss_treatment: as_coal
 geological_condition: moderat
 geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Teks ini
   ditulis operator tool untuk dry run Phase 0 dan HARUS diganti sebelum angka apa
