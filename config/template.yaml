@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# Template konfigurasi. SALIN, jangan diedit di tempat.
+#
+# Field yang kosong di bawah ini SENGAJA kosong. Masing-masing adalah gerbang
+# Phase 0 yang harus diisi manusia. Tool menolak berjalan sampai diisi.
+# ---------------------------------------------------------------------------
+paths:
+  workbook_dir: data/workbooks
+  las_dir: data/las
+  quality_table: null          # CSV/Excel; lihat io/quality_table.py QUALITY_COLUMNS
+  topography_dxf: null
+  output_dir: output
+
+authoritative_coordinate_source: collar_ts   # collar_ts | bhc_gps
+coal_thickness_source: lithology             # lithology | sampling
+
+geological_condition: moderat                # sederhana | moderat | kompleks
+geological_condition_justification: ""       # WAJIB, min 100 karakter, stop bila kosong
+
+# PERINGATAN: nilai di bawah BELUM diverifikasi terhadap teks SNI 5015:2019.
+classification_radii_m:
+  sederhana: { measured: 500, indicated: 1000, inferred: 1500 }
+  moderat:   { measured: 250, indicated: 500,  inferred: 1000 }
+  kompleks:  { measured: 100, indicated: 200,  inferred: 400 }
+
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.3
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+
+rpeee_constraints:
+  max_depth_m: null            # kedalaman roof seam di bawah topografi
+  max_depth_basis: ""          # WAJIB bila max_depth_m diisi
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ""
+  excluded_area_basis: ""
+
+estimation_method: voronoi     # voronoi | circular
+block_boundary_wkt: ""
+assumed_rd_t_per_m3: null      # bila diisi, dicap sebagai asumsi di setiap tabel

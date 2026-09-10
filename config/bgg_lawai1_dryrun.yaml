@@ -1,0 +1,43 @@
+paths:
+  workbook_dir: data/workbooks
+  las_dir: data/las
+  quality_table: null
+  topography_dxf: null
+  output_dir: output
+authoritative_coordinate_source: collar_ts
+coal_thickness_source: lithology
+geological_condition: moderat
+geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Teks ini
+  ditulis operator tool untuk dry run Phase 0 dan HARUS diganti sebelum angka apa
+  pun dipakai. Penilaian sebenarnya wajib menguraikan, dengan bukti dari data: kontinuitas
+  seam antar lubang, keberadaan dan rapat sesar, variasi ketebalan seam secara lateral,
+  dan besaran serta keseragaman dip. Kondisi ''moderat'' di bawah ini adalah nilai
+  default template, bukan kesimpulan dari data BGG Blok Lawai 1.'
+classification_radii_m:
+  sederhana:
+    measured: 500
+    indicated: 1000
+    inferred: 1500
+  moderat:
+    measured: 250
+    indicated: 500
+    inferred: 1000
+  kompleks:
+    measured: 100
+    indicated: 200
+    inferred: 400
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.3
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+rpeee_constraints:
+  max_depth_m: null
+  max_depth_basis: ''
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ''
+  excluded_area_basis: ''
+estimation_method: voronoi
+block_boundary_wkt: ''
+assumed_rd_t_per_m3: null

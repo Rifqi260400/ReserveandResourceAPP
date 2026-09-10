@@ -1,220 +1,137 @@
 # ReserveandResourceAPP
 
-Estimasi sumberdaya batubara dari data lubang bor (Excel) dan topografi (DXF),
-memakai model stratigrafi ber-grid.
+Estimasi sumberdaya batubara in-situ dengan metode **poligon pengaruh (Voronoi)**
+dibatasi radius klasifikasi, dengan metode **titik observasi sirkular** sebagai
+alternatif, diklasifikasikan menurut **SNI 5015:2019**.
 
-Masukan: **satu Excel** berisi collar + interval seam + kualitas, dan **satu DXF**
-topografi. Keluaran: tabel sumberdaya per seam per kelas, peta, grid ASCII untuk
-GIS, dan laporan exception validasi.
+Referensi data: PT. Budi Gema Gempita, Blok Lawai 1, Muara Lawai, Sumatera Selatan.
 
----
-
-## Cara pakai
+> **Status: Phase 0 (audit data) selesai. Modul estimasi belum dibangun.**
+> `coalres run` menolak berjalan sampai audit lulus.
 
 ```bash
 pip install -r requirements.txt
-
-# Bangkitkan data contoh untuk mencoba
-python scripts/make_synthetic_data.py --out sample_data
-
-PYTHONPATH=src python -m coalres.cli \
-    --holes sample_data/drillholes.xlsx \
-    --topo  sample_data/topo.dxf \
-    --config sample_data/config.yml \
-    --out   output/sample
+PYTHONPATH=src python -m coalres.cli audit --config config/template.yaml
 ```
 
-Pipeline berhenti dengan kode keluar 1 bila validasi menemukan ERROR. Gunakan
-`--allow-errors` untuk tetap melanjutkan — tapi angka yang keluar tidak layak
-dipakai sebelum ERROR-nya diselesaikan.
+Kode keluar: `0` audit lulus · `1` konfigurasi/masukan tidak sah · `2` ada gerbang STOP.
 
 ---
 
-## Format Excel yang diharapkan
+## Phase 0 sebagai gerbang keras
 
-Nama kolom **tidak perlu persis**; pemetaan alias ada di `config/default.yml`
-bagian `columns` dan bisa ditambah tanpa mengubah kode. Perbandingan mengabaikan
-kapital, spasi, dan underscore.
+Audit memeriksa 11 hal dan **berhenti** pada kondisi yang tidak boleh
+diselesaikan oleh kode — hanya manusia yang boleh memutuskan, dan keputusannya
+masuk ke konfigurasi agar ikut tercatat pada keluaran.
 
-### Sheet `Collar` — satu baris per lubang
-
-| Kolom | Wajib | Keterangan |
+| # | Pemeriksaan | Berhenti bila |
 |---|---|---|
-| `HOLE_ID` | ✅ | ID lubang |
-| `EASTING` | ✅ | Koordinat X (UTM) |
-| `NORTHING` | ✅ | Koordinat Y (UTM) |
-| `RL` | ✅ | Elevasi collar — **pakai hasil Total Station, bukan GPS handheld** |
-| `TOTAL_DEPTH` | | Dipakai untuk memeriksa interval yang melebihi TD |
-| `BLOCK` | | Nama blok/prospek |
+| 1 | Peta header teratasi + sampel baris | — (wajib dikonfirmasi) |
+| 2 | Konflik koordinat Collar vs BHC | `authoritative_coordinate_source` tidak ada |
+| 3 | Basis kedalaman (reconciled vs wellsite) | ada lubang tanpa log terekonsiliasi |
+| 4 | Konflik litologi vs sampling | `coal_thickness_source` tidak ada |
+| 5 | Cakupan kualitas per seam | tabel kualitas tidak dipasok |
+| 6 | Basis RD | `RD_basis` = `unknown` |
+| 7 | Open hole vs cored, core recovery | — |
+| 8 | Integritas, LAS, topografi | overlap interval, TD, topo tidak ada |
+| 9 | Jumlah lubang per seam | seam ditembus < 3 lubang |
+| 10 | Justifikasi kondisi geologi | justifikasi kosong / < 100 karakter |
+| 11 | Batasan RPEEE | `max_depth_m` diisi tanpa `max_depth_basis` |
 
-### Sheet `Seam` — satu baris per interval seam per lubang
+### Resolver header
 
-| Kolom | Wajib | Keterangan |
-|---|---|---|
-| `HOLE_ID` | ✅ | |
-| `SEAM` | ✅ | Kode seam, mis. `S10A` |
-| `FROM` | ✅ | Kedalaman roof (m) |
-| `TO` | ✅ | Kedalaman floor (m) |
-| `TM` | | Total moisture, basis **ar** (%) |
-| `IM` | | Inherent moisture, basis **adb** (%) |
-| `ASH` `VM` `FC` `TS` | | Basis **adb** (%) |
-| `CV_ADB` `CV_AR` | | Gross calorific value (cal/g) |
-| `RD` | | **Apparent** relative density, basis air-dried |
+Header workbook BGG membentang beberapa baris dan memakai merged cell, sehingga
+`header=0` selalu salah. Resolver membuka sheet lewat openpyxl dan
+**mengembangkan setiap merged range secara eksak**, lalu menutup blok header
+dengan aturan "baris header bebas angka" dan memetakan hasilnya ke nama kanonik
+lewat alias.
 
-Satu seam boleh punya beberapa baris (ply); ply akan dikompositkan otomatis
-dengan pembobotan massa. Kolom kualitas boleh juga ditaruh di sheet terpisah
-yang di-join pada `(HOLE_ID, SEAM)` — atur lewat `input.quality_sheet`.
+Alternatif yang ditolak:
 
-### DXF topografi
+- `read_excel(header=[6,7,8])` — menuntut nomor baris dihardcode per sheet, dan
+  diam-diam salah bila tata letak bergeser satu baris.
+- Forward-fill horizontal — mengisi melewati ujung merge, sehingga kolom tak
+  berjudul mewarisi judul tetangganya.
+- "Baris data = baris pertama dengan ≥3 angka" — **dicoba dan gagal**: baris data
+  SLL hanya membawa dua angka (Depth From, Depth To), sehingga ambang itu
+  melompati delapan baris data pertama dan menariknya menjadi header.
 
-Kontur (`LWPOLYLINE`/`POLYLINE`), spot height (`POINT`), atau TIN
-(`3DFACE`/`MESH`). Semua simpul ber-Z ditarik lalu diinterpolasi menjadi DTM.
-Titik ber-Z = 0 dibuang bila mayoritas titik lain ber-Z bukan nol — kontur yang
-lupa diberi elevasi adalah kesalahan lazim yang membuat lubang datar di DTM.
+Alias diperlukan karena header berbeda antar workbook untuk kolom yang sama:
+DH09_05C1 menulis `Lithologi` dan `Continuity`, DH11_01 menulis `Lith` dan
+`Hole Type`. Kode litologi (`C3`, `KL`, `XC`, …) **dibaca dari sheet
+`Library SLL`**, tidak dihardcode.
+
+### Kurva LAS adalah cacah mentah
+
+`LD` dan `SD` bersatuan **CPS**, bukan bulk density g/cc. Keduanya sah untuk
+verifikasi pick seam dan rekonsiliasi kedalaman, dan **diblokir dari jalur
+tonase**. Kurva densitas terkalibrasi dikenali dari mnemonic *dan* satuannya
+(`RHOB` + `g/cc`), tidak pernah ditebak dari besaran nilainya.
+
+### Aturan inventori (8.4)
+
+Bila `max_depth_m` kosong, run tetap selesai tetapi **setiap keluaran dilabeli
+Inventori Batubara**, bukan Sumberdaya, dan kolom kelas menjadi Inventori
+Terukur / Tertunjuk / Tereka. Aturan ini tidak dapat dilewati setelan lain.
 
 ---
 
-## Yang perlu diketahui sebelum mempercayai angkanya
+## Koreksi terhadap spesifikasi: catatan RD 1,94
 
-### 1. Tonase memakai ARD in-situ, bukan ARD lab
+Spesifikasi menyatakan bahwa RD 1,36 air-dried, dikonversi dengan TM 42,25% dan
+M adb 17,55%, menghasilkan ~1,94 t/m³, dan menyimpulkan basis RD bukan
+air-dried. **Angka itu berasal dari rumus yang salah.**
 
-ARD dari sertifikat lab diukur pada kondisi air-dried (IM). Batubara di alam
-mengandung total moisture (TM) yang jauh lebih tinggi. Air (RD 1,0) menarik
-densitas curah ke arah 1,0, sehingga **ARD in-situ lebih rendah dari ARD lab**.
+1,9417 = 1,36 × (100 − 17,55) / (100 − 42,25) adalah konversi **kadar** antar
+basis moisture (ash, CV, sulphur), diterapkan pada densitas. Kadar adalah fraksi
+massa; densitas adalah massa per **volume**, dan volume ikut bertambah ketika air
+masuk. Rumus kadar mengabaikan penambahan volume itu.
 
-Memakai ARD lab apa adanya **melebihkan tonase** — untuk batubara Sumatera
-Selatan tipikal (TM 42%, IM 18%, ARD 1,36) sekitar **10%**:
-
-| | ARD lab | ARD in-situ | Dampak |
-|---|---|---|---|
-| S10A | 1,36 | 1,228 | −9,7% |
-| S10B | 1,35 | 1,218 | −9,8% |
-
-Konversi memakai Preston & Sanders (1993), diterapkan per seam dari TM dan IM.
-Atur lewat `density.insitu_method`.
-
-Ini hanya berlaku untuk **apparent** relative density (ASTM D167, diukur pada
-bongkah utuh sehingga pori ikut terhitung). Bila lab melaporkan *true/real
-density* dari piknometer pada sampel digerus, angka itu tidak boleh dipakai untuk
-tonase sama sekali. Validator menandainya lewat cek `ARD_NOT_APPARENT`.
-
-### 2. Volume tidak dikoreksi cos(dip)
+Konversi densitas yang benar adalah **Preston & Sanders (1993)**:
 
 ```
-Volume = luas sel DALAM PETA × ketebalan VERTIKAL (roof RL − floor RL)
+K     = (100 − M_adb) / (100 − TM)
+RD_is = K · RD_ad / (1 + RD_ad · (K − 1))      →  1,2276 t/m³
 ```
 
-Prisma vertikal mengisi ruang antar dua permukaan secara persis, berapa pun
-dip-nya, dan lubang vertikal mengukur tepat besaran itu. Dip mengecilkan
-ketebalan **dan** membesarkan luas bidang seam; keduanya saling meniadakan.
+1,2276 wajar untuk batubara dengan CV ar 3373 kcal/kg, jadi 1,36 **konsisten**
+dengan ARD air-dried. Uji pendukung: matriks kering yang tersirat adalah 1,47 —
+rentang wajar untuk batubara ash ~11%.
 
-Menerapkan koreksi cos(dip) pada volume **mengurangi tonase secara keliru**.
-Koreksi true thickness berlaku untuk bor **miring** (interval sepanjang lubang ≠
-ketebalan vertikal), dan untuk hal yang memang bergantung pada tebal tegak lurus:
-cutoff ketebalan minimum dan parameter penambangan. Keduanya diperlakukan
-terpisah di `resource.apply_cutoffs`.
+Gerbang `RD_basis` tetap ditegakkan (basis wajib dinyatakan lab, tidak boleh
+disimpulkan dari nilainya), tetapi atas dasar itu — bukan atas dasar 1,94.
+Keduanya ada di `density.py` dengan nama eksplisit dan diuji di
+`tests/test_las_and_density.py`.
 
-Dip tetap diturunkan dari gradien grid struktur, dan dipakai untuk cutoff serta
-sebagai pembanding terhadap dip yang diukur di core — perbandingan itu adalah uji
-independen terhadap kualitas korelasi.
-
-### 3. Klasifikasi di sini bukan klasifikasi final
-
-> **KCMI tidak memuat tabel radius.** Ia kode *pelaporan* berbasis prinsip, satu
-> keluarga dengan JORC, dan menuntut klasifikasi dijustifikasi serta diungkapkan
-> dasarnya oleh Competent Person. Angka jarak yang lazim dipakai berasal dari
-> **SNI 5015**, yang berstatus pedoman — dan harus diverifikasi ke dokumen standar
-> versi terkini sebelum dipakai untuk pelaporan.
-
-Modul ini menilai **spasi titik data**. Ia tidak dapat menilai kualitas korelasi
-seam, kerapatan struktur, atau kecukupan QAQC — padahal ketiganya adalah bagian
-dari klasifikasi. Keluarannya adalah titik awal untuk penilaian Competent Person.
-
-Dua pengaman ditegakkan karena keduanya sering dilanggar implementasi
-berbasis buffer:
-
-- **Kriteria spasi, bukan buffer.** Sel hanya naik kelas bila ada cukup banyak
-  titik dalam radius (`classification.min_points`), bukan sekadar satu titik
-  terdekat. Satu lubang terisolasi tidak membuktikan kontinuitas apa pun.
-- **Klasifikasi per seam.** Seam tipis yang sulit dikorelasi tidak mewarisi kelas
-  dari seam utama di lubang yang sama.
-
-Selain itu, `require_quality_for_measured` menahan kelas Terukur di sel yang
-lubang pendukungnya tidak punya data kualitas: klasifikasi mencerminkan keyakinan
-pada tonase **dan** kualitas, bukan hanya geometri.
-
-`classification.geological_condition` adalah keputusan yang paling menentukan
-hasil akhir — menggesernya dari `moderate` ke `simple` melipatgandakan luas
-Terukur tanpa satu pun angka di laporan yang terlihat salah. Buktikan pilihannya
-dari data, jangan sekadar menyatakannya.
-
----
-
-## Validasi yang dijalankan
-
-| Kode | Severity | Yang diperiksa |
-|---|---|---|
-| `COLLAR_DUPLICATE` `COLLAR_MISSING` | ERROR | ID ganda, koordinat kosong |
-| `COLLAR_OUTLIER` | WARNING | Koordinat jauh dari sebaran (X/Y tertukar) |
-| `TOPO_DATUM_BIAS` | ERROR | Offset sistematis RL collar vs topo — masalah datum |
-| `COLLAR_VS_TOPO` | WARNING | Selisih RL per lubang (kasus GPS vs Total Station) |
-| `INTERVAL_INVALID` `INTERVAL_OVERLAP` `INTERVAL_BEYOND_TD` | ERROR | Geometri interval |
-| `SEAM_ORPHAN` `SEAM_UNKNOWN` | ERROR | Interval tanpa collar; seam di luar skema |
-| `STRAT_OUT_OF_ORDER` | ERROR | Urutan seam bertentangan dengan stratigrafi |
-| `STRUCTURE_RESIDUAL` | WARNING | Residual RL floor besar — sesar atau salah korelasi |
-| `MASS_BALANCE` | ERROR | IM+Ash+VM+FC ≠ 100 (adb) |
-| `CV_CONVERSION` | ERROR | CV(ar) tidak konsisten dengan CV(adb), TM, IM |
-| `ARD_RANGE` `ARD_NOT_APPARENT` | WARNING | ARD di luar rentang wajar; bukan apparent density |
-| `ARD_ASH_OUTLIER` `ARD_ASH_SLOPE` | WARNING | Menyimpang dari tren ARD–Ash |
-| `QUALITY_COVERAGE` | ERROR/WARNING/INFO | Cakupan data kualitas per seam |
-| `NO_QAQC` | WARNING | Tidak ada duplikat/CRM/umpire/blank |
-| `PARTING_EXCEEDS_CUTOFF` | WARNING | Parting melebihi cutoff — seam semestinya dipecah |
+Arah efeknya penting: RD in-situ **lebih rendah** dari RD air-dried, sehingga
+memakai RD lab apa adanya **melebihkan** tonase sekitar 10%.
 
 ---
 
 ## Struktur
 
 ```
-config/default.yml         parameter: pemetaan kolom, cutoff, grid, klasifikasi
+config/template.yaml       template; field gerbang sengaja kosong
 src/coalres/
-  config.py                pemuatan & validasi konfigurasi
-  io/excel.py              import Excel, pemetaan alias, normalisasi hole_id
-  io/dxf.py                import topografi DXF
-  validate.py              mesin QC -> laporan exception
-  quality.py               konversi basis, Preston-Sanders, compositing
-  grid.py                  Grid, interpolasi (IDW/nearest/linear), dip
-  model.py                 stratmodel: structure + isopach, clip topo, subcrop
-  classify.py              klasifikasi berbasis spasi
-  resource.py              cutoff, volume, tonase, kualitas terbobot
-  report.py                tabel, peta, grid ASCII
-  pipeline.py              orkestrasi
-  cli.py                   antarmuka baris perintah
-scripts/make_synthetic_data.py   dataset uji bergaya BGG, dengan cacat disengaja
-tests/                     44 tes, termasuk terhadap sertifikat lab nyata
+  config.py                skema pydantic, gerbang justifikasi & RPEEE
+  errors.py                kesalahan eksplisit; tidak ada default diam-diam
+  logging_setup.py         logging terstruktur
+  density.py               Preston-Sanders + konversi kadar (bernama, berarah)
+  io/excel.py              resolver header merged, pustaka litologi
+  io/las.py                LAS; deteksi cacah mentah vs densitas terkalibrasi
+  io/dxf.py                topografi; laporan jenis entitas
+  io/quality_table.py      skema tabel kualitas yang dipasok pengguna
+  audit/checks.py          11 pemeriksaan Phase 0
+  audit/render.py          laporan teks + Markdown
+  cli.py                   coalres audit | run
+tests/                     41 tes terhadap workbook, LAS, dan sertifikat asli
 ```
 
-Model dibangun dengan strategi **structure + isopach**: floor tiap seam di-grid
-sebagai permukaan struktur, ketebalan vertikal di-grid sebagai isopach, lalu roof
-diturunkan (`roof = floor + isopach`). Isopach selalu ≥ 0 dan lebih halus
-daripada struktur, sehingga lebih stabil untuk diinterpolasi. Menginterpolasi
-roof dan floor secara terpisah kerap menghasilkan ketebalan negatif atau
-permukaan yang saling memotong di area ekstrapolasi.
-
----
-
-## Belum ada (dan diperlukan sebelum pelaporan)
-
-- **Batas IUP / poligon batas** — ekstrapolasi bisa keluar konsesi. Saat ini
-  hanya dibatasi `grid.max_extrapolation_m`.
-- **Pengurangan sungai, jalan, permukiman, kawasan lindung.**
-- **Penanganan sesar** — interpolasi belum dipisah per blok sesar. `STRUCTURE_RESIDUAL`
-  akan menandai lokasi yang mencurigakan bila sesar ternyata ada.
-- **Kriging** — saat ini IDW/nearest/linear. Kriging baru bermakna bila jumlah
-  titik per domain cukup untuk membuat variogram.
-- **QAQC lab** — tidak bisa dibuat surut; harus dibangun untuk pengiriman berikutnya.
+Belum dibangun (menunggu Phase 0 dikonfirmasi): `seams`, `quality`, `topo`,
+`estimate`, `classify`, `rpeee`, `report`.
 
 ## Tes
 
 ```bash
-PYTHONPATH=src python -m pytest tests/ -q
+PYTHONPATH=src:tests python -m pytest tests/ -q
 ```
