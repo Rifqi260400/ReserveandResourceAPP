@@ -1,0 +1,122 @@
+# ---------------------------------------------------------------------------
+# Konfigurasi default estimasi sumberdaya batubara
+# Semua angka di sini adalah PARAMETER, bukan konstanta. Ubah sesuai deposit.
+# ---------------------------------------------------------------------------
+
+project:
+  name: "BGG"
+  crs: "EPSG:32748"          # UTM 48S - WAJIB dikonfirmasi sebelum dipakai
+  # Blok yang diestimasi terpisah. Kosongkan untuk memproses semua sekaligus.
+  blocks: []
+
+input:
+  collar_sheet: "Collar"
+  seam_sheet: "Seam"
+  quality_sheet: null         # null = kolom kualitas menyatu di seam_sheet
+
+# Pemetaan nama kolom. Kiri = nama kanonik internal, kanan = daftar alias
+# yang diterima dari file Excel (tidak case-sensitive, spasi/underscore diabaikan).
+columns:
+  collar:
+    hole_id:  [hole_id, holeid, hole, lubang, hole_number, bh_id]
+    east:     [east, easting, x, bt, timur]
+    north:    [north, northing, y, ls, utara]
+    rl:       [rl, elevation, elev, z, collar_rl, ketinggian]
+    td:       [td, total_depth, depth, kedalaman, max_depth]
+    block:    [block, blok, prospect, prospect_area, area]
+  seam:
+    hole_id:  [hole_id, holeid, hole, lubang, hole_number, bh_id]
+    seam:     [seam, seam_id, seam_name, lapisan]
+    depth_from: [from, depth_from, roof, from_m, dari, top]
+    depth_to:   [to, depth_to, floor, to_m, sampai, bottom]
+  quality:
+    hole_id:  [hole_id, holeid, hole, lubang]
+    seam:     [seam, seam_id, seam_name, lapisan]
+    tm_ar:    [tm, tm_ar, total_moisture, moisture_ar]
+    im_adb:   [im, im_adb, inherent_moisture, moisture_adb]
+    ash_adb:  [ash, ash_adb, ash_content]
+    vm_adb:   [vm, vm_adb, volatile_matter]
+    fc_adb:   [fc, fc_adb, fixed_carbon]
+    ts_adb:   [ts, ts_adb, total_sulphur, total_sulfur, sulphur]
+    cv_adb:   [cv_adb, cv_ad, gross_cv_adb, calorific_adb]
+    cv_ar:    [cv_ar, gar, gross_cv_ar, calorific_ar]
+    rd_adb:   [rd, rd_adb, ard, ard_adb, relative_density, density]
+
+# ---------------------------------------------------------------------------
+# Urutan stratigrafi, dari MUDA (atas) ke TUA (bawah).
+# Wajib diisi: dipakai untuk memvalidasi konsistensi korelasi antar-lubang.
+# Kosongkan untuk menurunkannya otomatis dari data (dengan peringatan).
+# ---------------------------------------------------------------------------
+stratigraphy: []
+
+validation:
+  # Toleransi selisih RL collar terhadap permukaan topo (meter).
+  collar_vs_topo_tolerance_m: 2.0
+  # Toleransi mass balance proximate adb (IM+Ash+VM+FC = 100).
+  mass_balance_tolerance_pct: 0.5
+  # Toleransi hitung ulang CV(ar) dari CV(adb) (cal/g).
+  cv_conversion_tolerance: 25.0
+  # Gap/overlap interval seam yang masih ditoleransi (meter).
+  interval_tolerance_m: 0.01
+  # z-score untuk menandai outlier pada regresi RD-Ash.
+  rd_ash_outlier_z: 3.0
+
+grid:
+  cell_size: 25.0             # meter. Proporsional terhadap spasi bor (~1/4 - 1/2).
+  margin: 200.0               # buffer di luar bounding box data (meter)
+  # Interpolasi tidak diperluas melebihi jarak ini dari titik data terdekat.
+  max_extrapolation_m: 500.0
+  method: idw                 # idw | nearest | linear
+  idw_power: 2.0
+  idw_max_points: 12
+  idw_search_radius_m: 1500.0
+
+seam_rules:
+  # Cutoff diterapkan pada TRUE thickness (tegak lurus bidang seam).
+  min_seam_thickness_m: 0.30
+  max_parting_thickness_m: 0.30
+  # Batas RPEEE. Sel di luar batas ini tidak dihitung sebagai sumberdaya.
+  max_depth_m: 150.0
+  max_stripping_ratio: null   # mis. 12.0 (bcm/ton). null = tidak diterapkan.
+
+density:
+  # Konversi ARD air-dried -> ARD in-situ.
+  #   preston_sanders : hitung dari TM & IM tiap seam (dianjurkan)
+  #   fixed           : pakai nilai tetap di bawah
+  #   none            : pakai ARD lab apa adanya (TIDAK dianjurkan - bias ~10%)
+  insitu_method: preston_sanders
+  fixed_insitu_ard: 1.28
+  # Batas kewajaran hasil konversi; di luar ini akan diberi peringatan.
+  plausible_range: [1.10, 1.80]
+
+# ---------------------------------------------------------------------------
+# Klasifikasi sumberdaya.
+#
+# CATATAN PENTING: angka jarak di bawah adalah TITIK AWAL, bukan aturan.
+# KCMI tidak memuat tabel radius - ia kode pelaporan berbasis prinsip dan
+# menuntut justifikasi Competent Person. Angka yang lazim dipakai berasal
+# dari SNI 5015 dan HARUS diverifikasi ke dokumen standar versi terkini
+# sebelum dipakai untuk pelaporan.
+#
+# min_points memberlakukan kriteria SPASI, bukan buffer di sekitar lubang
+# tunggal: satu lubang terisolasi tidak membuktikan kontinuitas apa pun.
+# ---------------------------------------------------------------------------
+classification:
+  geological_condition: moderate   # simple | moderate | complex
+  distances:
+    simple:   {measured: 500.0, indicated: 1000.0, inferred: 1500.0}
+    moderate: {measured: 250.0, indicated:  500.0, inferred: 1000.0}
+    complex:  {measured: 100.0, indicated:  200.0, inferred:  400.0}
+  min_points:
+    measured: 3
+    indicated: 2
+    inferred: 1
+  # Sel hanya boleh naik kelas bila lubang pendukung punya data kualitas.
+  require_quality_for_measured: true
+  require_quality_for_indicated: true
+
+output:
+  dir: "output"
+  write_grids: true
+  write_maps: true
+  decimals: 2
