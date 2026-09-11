@@ -46,10 +46,10 @@ minex:
   - f8
   - f9
   - f10
-  marker_seams:                      # baris W = base of weathering (DIKONFIRMASI)
+  marker_seams:
   - W
-  quality_rd_basis: in_situ          # DIKONFIRMASI pengguna
-  quality_moisture_basis: unknown    # IM atau TM belum dinyatakan - tidak menyentuh tonase
+  quality_rd_basis: in_situ
+  quality_moisture_basis: unknown
   quality_cv_unit: kcal/kg
   on_invalid_quality_interval: exclude
 authoritative_coordinate_source: collar_ts
@@ -91,8 +91,12 @@ validation:
   collar_vs_topo_tolerance_m: 2.0
   mass_balance_tolerance_pct: 0.5
 rpeee_constraints:
-  max_depth_m: null
-  max_depth_basis: ''
+  max_depth_m: 100.0
+  max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji
+    jalur pelaporan Sumberdaya sampai ujung pada dataset dummy, bukan dari studi kelayakan,
+    batas pit blok sekitar, maupun batas stripping ratio. Pada data produksi, angka
+    ini WAJIB diganti dengan batas yang punya dasar ekonomi nyata dan dasar itu dinyatakan
+    di sini.
   min_cv_ar_kcal_kg: null
   max_ash_adb_pct: null
   excluded_area_wkt: ''
@@ -103,4 +107,4 @@ maps:
   label_contours: true
 estimation_method: voronoi
 block_boundary_wkt: ''
-assumed_rd_t_per_m3: 1.30            # median RD in-situ dari 18 lubang berkualitas
+assumed_rd_t_per_m3: 1.3
