@@ -33,15 +33,23 @@ def cfg(base_config_dict, write_config, minex_dir):
         "faults_file": str(minex_dir / "faults01.dat"),
         "survey_columns": ["hole_id", "east", "north", "rl", "total_depth"],
         "lithology_columns": ["hole_id", "seam", "depth_from", "depth_to", "code"],
+        # Nama polos, sesuai berkas yang sebenarnya: sumber flat tidak
+        # menyatakan basis di nama kolom.
         "quality_columns": ["hole_id", "seam", "depth_from", "depth_to", "RD",
-                            "M_adb", "ASH_adb", "VM_adb", "FC_adb", "TS_adb", "CV_adb"],
+                            "MOISTURE", "ASH", "VM", "FC", "TS", "CV"],
         "fault_columns": ["name", "east", "north", "z", "f5", "f6", "f7", "f8", "f9", "f10"],
         "marker_seams": ["W"],
         "quality_rd_basis": "in_situ",
+        "quality_moisture_basis": "unknown",
+        "quality_cv_unit": "kcal/kg",
         "on_invalid_quality_interval": "exclude",
     }
     base_config_dict["stratigraphy"] = ["A", "B"]
     base_config_dict["seam_splits"] = {"A": ["A1", "A2"]}
+    # 42 dari 60 lubang tidak punya hasil lab. Tanpa nilai asumsi mereka
+    # dikeluarkan seluruhnya - perilaku yang benar, tapi ia menyembunyikan
+    # jalur "RD asumsi" dari pengujian.
+    base_config_dict["assumed_rd_t_per_m3"] = 1.30
     return Config.load(write_config(base_config_dict))
 
 
@@ -175,3 +183,33 @@ def test_full_pipeline_on_minex_dataset(cfg, write_config, base_config_dict, tmp
     assert set(frame["seam"]) <= {"A", "A1", "A2", "B"}
     # Tanpa batasan ekonomi, seluruh label adalah Inventori.
     assert frame["class"].str.startswith("Inventori").all()
+
+
+def test_unsuffixed_quality_columns_reach_the_report(cfg, write_config):
+    """Berkas flat tidak menyatakan basis di nama kolom (ASH, bukan ASH_adb).
+
+    Tanpa nama polos di daftar atribut, kualitas terbaca dari berkas tetapi
+    tidak pernah sampai ke tabel keluaran, dan laporan tampak seolah tidak ada
+    data kualitas sama sekali.
+    """
+    from coalres.pipeline import run
+    from coalres.quality import AVERAGEABLE
+
+    assert {"ASH", "CV", "TS", "VM", "FC", "MOISTURE"} <= set(AVERAGEABLE)
+
+    results = run(write_config(cfg.model_dump(mode="json")), verbose=False)
+    by_seam = results.frames["by_seam"]
+    assert {"ASH", "CV", "TS"} <= set(by_seam.columns)
+    assert by_seam["ASH"].notna().any()
+    # Jumlah sampel ikut di setiap angka rata-rata.
+    assert (by_seam["ASH_n"] > 0).any()
+
+
+def test_assumed_rd_is_flagged_per_polygon(cfg, write_config):
+    """Poligon tanpa hasil lab memakai RD asumsi dan HARUS tertandai."""
+    from coalres.pipeline import run
+
+    results = run(write_config(cfg.model_dump(mode="json")), verbose=False)
+    frame = results.frames["polygons"]
+    assert frame["rd_is_assumed"].any()
+    assert not frame["rd_is_assumed"].all()

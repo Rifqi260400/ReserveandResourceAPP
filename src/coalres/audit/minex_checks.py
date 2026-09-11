@@ -175,6 +175,30 @@ def check_quality(dataset: HoleDataset, cfg: Config, report: AuditReport) -> Non
     else:
         report.add(Severity.INFO, "06_rd_basis",
                    f"Basis RD dinyatakan konfigurasi: '{basis}'.")
+        if basis == "in_situ":
+            report.add(
+                Severity.INFO, "06_rd_basis",
+                "RD sudah in-situ: konversi Preston & Sanders tidak diterapkan, "
+                "dan basis kolom moisture tidak menyentuh tonase.",
+            )
+
+    moisture = cfg.minex.quality_moisture_basis
+    if moisture == "unknown":
+        severity = Severity.INFO if basis == "in_situ" else Severity.STOP
+        report.add(
+            severity, "06_rd_basis",
+            "minex.quality_moisture_basis = 'unknown'. "
+            + ("Karena RD sudah in-situ, ini tidak menyentuh tonase; ia hanya "
+               "menentukan label basis pada kualitas yang dilaporkan."
+               if basis == "in_situ" else
+               "Konversi basis RD menuntut TM dan IM; keduanya tidak dapat "
+               "dibedakan selama basis moisture belum dinyatakan."),
+            remedy="Nyatakan apakah kolom moisture adalah IM (adb) atau TM (ar).",
+        )
+    else:
+        report.add(Severity.INFO, "06_rd_basis",
+                   f"Basis moisture: '{moisture}'. Satuan CV: "
+                   f"'{cfg.minex.quality_cv_unit}'.")
 
     quality = dataset.quality
     if quality is None:
@@ -193,7 +217,9 @@ def check_quality(dataset: HoleDataset, cfg: Config, report: AuditReport) -> Non
                    remedy="Perbaiki berkas qual. Menukar from dan to di dalam kode berarti "
                           "menebak niat penulisnya, jadi itu tidak dilakukan.")
 
-    components = [c for c in ("M_adb", "ASH_adb", "VM_adb", "FC_adb") if c in quality]
+    components = [c for c in ("MOISTURE", "M_adb", "ASH", "ASH_adb", "VM", "VM_adb",
+                              "FC", "FC_adb") if c in quality]
+    components = components[:4] if len(components) >= 4 else []
     if len(components) == 4:
         total = quality[components].sum(axis=1, min_count=4)
         off = (total - 100.0).abs() > cfg.validation.mass_balance_tolerance_pct
@@ -208,10 +234,11 @@ def check_quality(dataset: HoleDataset, cfg: Config, report: AuditReport) -> Non
                 remedy="Konfirmasi arti dan basis tiap kolom di berkas qual.",
             )
 
-    if {"RD", "ASH_adb"} <= set(quality.columns):
-        sub = quality[["RD", "ASH_adb"]].dropna()
+    ash_column = next((c for c in ("ASH", "ASH_adb") if c in quality.columns), None)
+    if ash_column and "RD" in quality.columns:
+        sub = quality[["RD", ash_column]].dropna()
         if len(sub) >= 10:
-            r = float(np.corrcoef(sub["RD"], sub["ASH_adb"])[0, 1])
+            r = float(np.corrcoef(sub["RD"], sub[ash_column])[0, 1])
             severity = Severity.INFO if r > 0.5 else Severity.WARN
             report.add(severity, "07_quality",
                        f"korelasi RD terhadap ASH = {r:+.3f} pada {len(sub)} sampel. "

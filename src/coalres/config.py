@@ -141,6 +141,16 @@ class MinexSpec(_Strict):
     # boleh disimpulkan dari nilainya.
     quality_rd_basis: RDBasis = "unknown"
 
+    # Basis kolom moisture. Sumber data kerap hanya menulis "Moisture" tanpa
+    # menyatakan IM atau TM. Ketika quality_rd_basis = 'in_situ', ambiguitas ini
+    # TIDAK menyentuh tonase - konversi densitas tidak diperlukan - dan hanya
+    # menentukan label basis pada kualitas yang dilaporkan.
+    quality_moisture_basis: Literal["adb", "ar", "unknown"] = "unknown"
+
+    # Satuan nilai kalori. kcal/kg dan cal/g bernilai sama secara numerik;
+    # dinyatakan agar tidak ada yang mengalikan 1000 di kemudian hari.
+    quality_cv_unit: Literal["kcal/kg", "cal/g", "MJ/kg"] = "kcal/kg"
+
     # Interval kualitas terbalik (to <= from) adalah cacat data. Perbaikannya
     # bukan urusan kode - menukar from dan to akan menebak niat penulisnya.
     #   stop    : hentikan run (bawaan)

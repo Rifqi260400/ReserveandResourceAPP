@@ -27,8 +27,17 @@ from .seams import SeamIntersection
 log = get_logger("quality")
 
 # Atribut yang boleh dirata-rata linear pada basis yang sama.
-AVERAGEABLE = ("TM_ar", "M_adb", "ASH_adb", "VM_adb", "FC_adb", "TS_adb",
-               "CV_adb", "CV_ar", "CV_daf")
+#
+# Nama BERSUFIKS BASIS (ASH_adb) dipakai sumber yang menyatakan basisnya.
+# Nama POLOS (ASH) dipakai sumber yang tidak - berkas flat Minex termasuk di
+# situ. Keduanya harus dikenali: tanpa nama polos, kualitas terbaca dari berkas
+# tetapi tidak pernah sampai ke tabel keluaran, dan laporan tampak seolah tidak
+# ada data kualitas sama sekali.
+AVERAGEABLE = (
+    "TM_ar", "M_adb", "ASH_adb", "VM_adb", "FC_adb", "TS_adb",
+    "CV_adb", "CV_ar", "CV_daf",
+    "MOISTURE", "ASH", "VM", "FC", "TS", "CV",
+)
 
 # Atribut non-additive: merata-ratakannya secara aritmetik salah secara fisik.
 NON_ADDITIVE = ("HGI", "AFT", "AFT_ID", "AFT_ST", "AFT_HT", "AFT_FT")
