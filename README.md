@@ -194,11 +194,34 @@ peta — itu benar, keduanya seam pada kedudukan stratigrafi berbeda.
 | 1 | `resource_estimate.xlsx` | 11 sheet: sampul berlabel, asumsi & batasan, ringkasan seam x kelas, per seam, total, kualitas terbobot, intercept per lubang, rekonsiliasi RPEEE, rekonsiliasi tebal-kualitas, sensitivitas RD, temuan audit |
 | 2 | `vector/` | GeoJSON + Shapefile poligon klasifikasi, beratribut seam, kelas, luas, tebal, RD, tonase, lubang sumber, cakupan kualitas, label |
 | 3 | `grids/` | ASCII grid + GeoTIFF per seam: roof RL, floor RL, tebal batubara, kedalaman di bawah permukaan — plus sidecar berisi metode interpolasi, spasi grid, dan sejauh mana permukaan didukung data bor |
-| 4 | `dxf/` | **Kontur struktur roof & floor per seam ke DXF**, interval dapat diatur (bawaan 2 m), layer `Seam A Roof`, `Seam A Floor`, dst. Satu berkas gabungan + satu per seam |
-| 5 | `maps/` | **Peta kontur struktur roof & floor** (garis kontur berlabel + subcrop + batas blok), peta isopach kontur, peta permukaan terisi, peta klasifikasi dengan subcrop dan kontur batas kedalaman |
-| 6 | `logs/` | Plot per lubang: kurva GR dan densitas LAS di samping litologi dan pick seam |
-| 7 | `qaqc_report.md` | Temuan audit, pengecualian, justifikasi kondisi geologi verbatim, rekonsiliasi RPEEE, rekonsiliasi jumlah lubang |
-| 8 | `run_log.json` | Konfigurasi terpakai, SHA-256 setiap berkas masukan, timestamp, versi pustaka |
+| 4 | `grd/` | **Grid Surfer (.grd)** per seam: `{seam}_uncut.grd`, `{seam}_cut.grd`, roof, floor, depth, dan `{seam}_qual_{ATRIBUT}.grd` — masing-masing dengan berkas keterangan `.txt` |
+| 5 | `dxf/` | **Kontur struktur roof & floor per seam ke DXF**, interval dapat diatur (bawaan 2 m), layer `Seam A Roof`, `Seam A Floor`, dst. Satu berkas gabungan + satu per seam |
+| 6 | `maps/` | **Peta kontur struktur roof & floor** (garis kontur berlabel + subcrop + batas blok), peta isopach kontur, peta permukaan terisi, peta klasifikasi dengan subcrop dan kontur batas kedalaman |
+| 7 | `logs/` | Plot per lubang: kurva GR dan densitas LAS di samping litologi dan pick seam |
+| 8 | `qaqc_report.md` | Temuan audit, pengecualian, justifikasi kondisi geologi verbatim, rekonsiliasi RPEEE, rekonsiliasi jumlah lubang |
+| 9 | `run_log.json` | Konfigurasi terpakai, SHA-256 setiap berkas masukan, timestamp, versi pustaka |
+
+### Uncut vs cut
+
+`{seam}_uncut.grd` adalah ketebalan **geologi** in-situ: amplop roof ke floor,
+**tanpa** ketebalan minimum, **tanpa** pengecualian parting, **tanpa** dilusi,
+**tanpa** cutoff. `{seam}_cut.grd` adalah ketebalan setelah aturan penambangan.
+
+Perbedaannya bukan kosmetik: grid uncut dibangun dari interseksi **pra-cutoff**,
+sehingga lubang yang lebih tipis dari `min_seam_thickness_m` ikut mendukung
+interpolasi. Pada dataset dummy, seam A uncut turun sampai 0,96 m melawan cut
+3,02 m, dan cakupannya 112 sel lebih luas.
+
+Membangun grid uncut dari interseksi yang sudah lolos cutoff menghasilkan
+berkas bernama uncut yang isinya cut — dan tidak ada cara membedakannya dari
+berkas yang benar. Peringatan itu tercetak di tiap berkas keterangan.
+
+Grid RD (`{seam}_qual_rd_t_per_m3.grd`) ikut ditulis: ia faktor ketiga pada
+`tonase = luas × tebal × RD`, jadi estimasi cadangan di hilir membutuhkannya
+bersama grid ketebalan.
+
+Sel tanpa data ditulis sebagai `1.70141e+38` (Surfer blank), bukan nol — sel
+bernilai nol dan sel tanpa data adalah dua hal berbeda.
 
 ### Ekspor DXF
 

@@ -92,7 +92,8 @@ def _envelope_rows(intervals: pd.DataFrame, roof: float, floor: float) -> pd.Dat
                      & (intervals["depth_to"] <= floor + 1e-9)]
 
 
-def build_intersections(wb: Workbook, cfg: Config) -> list[SeamIntersection]:
+def build_intersections(wb: Workbook, cfg: Config,
+                        apply_cutoffs: bool = True) -> list[SeamIntersection]:
     """Bangun interseksi seam untuk satu lubang."""
     if cfg.coal_thickness_source != "lithology":
         raise MissingDataError(
@@ -179,6 +180,12 @@ def build_intersections(wb: Workbook, cfg: Config) -> list[SeamIntersection]:
                 core_loss_treatment=treatment,
                 split_from=str(seam) if len(segments) > 1 else None,
             ))
+
+    if not apply_cutoffs:
+        # Ketebalan UNCUT: seluruh interseksi apa adanya, tanpa aturan
+        # penambangan. Grid yang dibangun darinya adalah ketebalan geologi,
+        # bukan ketebalan yang dapat ditambang.
+        return results
 
     kept = []
     for item in results:
@@ -271,7 +278,8 @@ def assumptions(cfg: Config) -> list[str]:
     return notes
 
 
-def build_intersections_from_dataset(dataset, cfg: Config) -> list[SeamIntersection]:
+def build_intersections_from_dataset(dataset, cfg: Config,
+                                     apply_cutoffs: bool = True) -> list[SeamIntersection]:
     """Interseksi seam dari HoleDataset (jalur flat file Minex).
 
     Berbeda dari jalur workbook BGG: berkas `lit` Minex mencantumkan interval
@@ -309,6 +317,9 @@ def build_intersections_from_dataset(dataset, cfg: Config) -> list[SeamIntersect
             thickness_source="lithology_interval",
             core_loss_treatment="n/a (tidak dicatat di berkas lit)",
         ))
+
+    if not apply_cutoffs:
+        return results
 
     kept = []
     for item in results:

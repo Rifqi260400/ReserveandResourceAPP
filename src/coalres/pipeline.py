@@ -60,6 +60,8 @@ class Results:
     polygons: list[ResourcePolygon]
     frames: dict[str, pd.DataFrame]
     surfaces: dict[str, dict[str, Surface]]
+    uncut_surfaces: dict[str, Surface] = field(default_factory=dict)
+    quality_surfaces: dict[str, dict[str, Surface]] = field(default_factory=dict)
     outputs: list[Path] = field(default_factory=list)
 
 
@@ -314,6 +316,89 @@ def build_surfaces(
     return topo, surfaces
 
 
+def build_uncut_thickness(dataset, inputs: Inputs, cfg: Config,
+                          reference: Surface) -> dict[str, Surface]:
+    """Grid ketebalan UNCUT: seluruh interseksi, tanpa aturan penambangan.
+
+    "Uncut" berarti ketebalan in-situ mentah sebelum aturan penambangan:
+    tanpa ketebalan minimum, tanpa pengecualian parting, tanpa dilusi, tanpa
+    cutoff. Yang dihasilkan adalah ketebalan GEOLOGI, bukan ketebalan yang
+    dapat ditambang.
+
+    Grid ini WAJIB dibangun dari interseksi PRA-cutoff. Memakai interseksi yang
+    sudah lolos cutoff menghasilkan berkas yang bernama uncut tetapi isinya cut,
+    dan tidak ada cara membedakannya dari berkas yang benar.
+    """
+    if dataset is not None:
+        items = build_intersections_from_dataset(dataset, cfg, apply_cutoffs=False)
+        collars = dataset.collars.set_index("hole_id")
+        lookup = {h: (float(r["east"]), float(r["north"]), float(r["rl"]))
+                  for h, r in collars.iterrows()}
+    else:
+        items = []
+        lookup = {}
+        for wb in inputs.workbooks:
+            items.extend(build_intersections(wb, cfg, apply_cutoffs=False))
+            east, north, rl = _collar(wb, cfg)
+            lookup[normalise_hole_id(wb.hole_id)] = (east, north, rl)
+
+    rows = []
+    for item in items:
+        if item.hole_id not in lookup:
+            continue
+        east, north, _ = lookup[item.hole_id]
+        rows.append({"seam": item.seam, "east": east, "north": north,
+                     # Uncut memakai GROSS thickness: amplop roof-floor penuh,
+                     # parting belum dikeluarkan.
+                     "uncut_m": item.gross_thickness_m})
+    frame = pd.DataFrame(rows)
+
+    surfaces: dict[str, Surface] = {}
+    for seam, group in frame.groupby("seam", sort=False):
+        if len(group) < 3:
+            continue
+        surface = build_surface(group["east"], group["north"], group["uncut_m"],
+                                spacing=reference.spacing, name=f"{seam}_uncut_thickness")
+        surfaces[seam] = _align(surface, reference)
+    return surfaces
+
+
+def build_quality_surfaces(intercepts: pd.DataFrame, reference: Surface,
+                           attributes: list[str] | None = None) -> dict[str, dict[str, Surface]]:
+    """Grid atribut kualitas per seam, dari nilai komposit tiap lubang.
+
+    Grid ini untuk penyajian dan konsumsi hilir. Ia TIDAK menyumbang apa pun ke
+    jalur tonase - tonase berasal dari poligon, dan kualitas poligon berasal
+    dari lubangnya sendiri.
+    """
+    from .quality import AVERAGEABLE
+
+    if intercepts.empty:
+        return {}
+    # RD ikut di-grid: ia faktor ketiga pada tonase = luas x tebal x RD, jadi
+    # estimasi cadangan di hilir membutuhkannya bersama grid ketebalan.
+    default = [c for c in intercepts.columns if c in AVERAGEABLE]
+    if "rd_t_per_m3" in intercepts.columns:
+        default.append("rd_t_per_m3")
+    candidates = attributes or default
+    out: dict[str, dict[str, Surface]] = {}
+    for seam, group in intercepts.groupby("seam", sort=False):
+        per_attribute: dict[str, Surface] = {}
+        for attribute in candidates:
+            if attribute not in group:
+                continue
+            values = group[["east", "north", attribute]].dropna()
+            if len(values) < 3:
+                continue
+            surface = build_surface(values["east"], values["north"], values[attribute],
+                                    spacing=reference.spacing,
+                                    name=f"{seam}_{attribute}")
+            per_attribute[attribute] = _align(surface, reference)
+        if per_attribute:
+            out[seam] = per_attribute
+    return out
+
+
 def _align(surface: Surface, reference: Surface) -> Surface:
     """Contoh ulang permukaan ke grid referensi supaya bisa dikurangkan."""
     gx, gy = np.meshgrid(reference.x, reference.y)
@@ -386,8 +471,15 @@ def run(config_path: str | Path, verbose: bool = True) -> Results:
         "rd_notes": pd.DataFrame({"catatan konversi RD": rd_notes}),
         "plan_overlap": plan_overlap_report(polygons, cfg),
     }
+    reference = topo
+    uncut = build_uncut_thickness(dataset, inputs, cfg, reference)
+    quality_grids = build_quality_surfaces(
+        intercepts, reference,
+        cfg.maps.grd_export.quality_attributes or None,
+    )
     return Results(config=cfg, audit=audit, polygons=polygons, frames=frames,
-                   surfaces={"topo": {"topo": topo}, **surfaces})
+                   surfaces={"topo": {"topo": topo}, **surfaces},
+                   uncut_surfaces=uncut, quality_surfaces=quality_grids)
 
 
 def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[Path]:
@@ -496,6 +588,91 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
         written.append(map_polygons(results.polygons, seam, cfg,
                                     maps_dir / f"{seam}_klasifikasi.png",
                                     holes=holes, overlays=overlays))
+
+    # --- Ekspor grid .grd ---------------------------------------------------- #
+    grd_cfg = cfg.maps.grd_export
+    if grd_cfg.enabled:
+        from .grdout import ATTRIBUTE_UNITS, write_grd, write_sidecar
+
+        grd_dir = out_dir / "grd"
+        suffix = "grd"
+        support = ("di dalam convex hull lubang yang menembus seam ini; "
+                   "di luar itu kosong (tidak diekstrapolasi)")
+
+        for seam, surface in results.uncut_surfaces.items():
+            if not grd_cfg.write_uncut_thickness:
+                break
+            written.append(write_grd(surface, grd_dir / f"{seam}_uncut.{suffix}",
+                                     fmt=grd_cfg.format))
+            written.append(write_sidecar(
+                grd_dir / f"{seam}_uncut.txt", name=f"{seam}_uncut",
+                description="Ketebalan seam UNCUT - amplop roof ke floor, sebelum "
+                            "aturan penambangan apa pun",
+                units="meter", surface=surface, support_note=support,
+                warnings=[
+                    "UNCUT berarti ketebalan geologi in-situ: TANPA ketebalan "
+                    "minimum, TANPA pengecualian parting, TANPA dilusi, TANPA cutoff.",
+                    "Ini BUKAN ketebalan yang dapat ditambang. Untuk itu pakai "
+                    f"{seam}_cut.{suffix}.",
+                    "Memakai grid ini langsung untuk estimasi cadangan akan "
+                    "MELEBIHKAN hasilnya.",
+                ]))
+
+        for seam, surfaces in results.surfaces.items():
+            if seam == "topo":
+                continue
+            if grd_cfg.write_cut_thickness and "thickness" in surfaces:
+                surface = surfaces["thickness"]
+                written.append(write_grd(surface, grd_dir / f"{seam}_cut.{suffix}",
+                                         fmt=grd_cfg.format))
+                written.append(write_sidecar(
+                    grd_dir / f"{seam}_cut.txt", name=f"{seam}_cut",
+                    description="Ketebalan batubara setelah aturan penambangan",
+                    units="meter", surface=surface, support_note=support,
+                    warnings=[
+                        f"Cutoff ketebalan minimum {cfg.cutoffs.min_seam_thickness_m} m "
+                        "sudah diterapkan.",
+                        f"Parting di atas {cfg.cutoffs.max_parting_thickness_m} m "
+                        "memisahkan seam; di bawahnya masuk gross tetapi keluar "
+                        "dari tebal batubara.",
+                        "Dilusi dan recovery penambangan BELUM diterapkan - keduanya "
+                        "milik tahap cadangan.",
+                    ]))
+            if grd_cfg.write_structure:
+                for key, label, units in (("roof", "RL roof seam", "meter RL"),
+                                          ("floor", "RL floor seam", "meter RL"),
+                                          ("depth", "Kedalaman roof di bawah permukaan", "meter")):
+                    if key not in surfaces:
+                        continue
+                    written.append(write_grd(surfaces[key],
+                                             grd_dir / f"{seam}_{key}.{suffix}",
+                                             fmt=grd_cfg.format))
+
+        if grd_cfg.write_quality:
+            for seam, attributes in results.quality_surfaces.items():
+                for attribute, surface in attributes.items():
+                    written.append(write_grd(
+                        surface, grd_dir / f"{seam}_qual_{attribute}.{suffix}",
+                        fmt=grd_cfg.format))
+                    written.append(write_sidecar(
+                        grd_dir / f"{seam}_qual_{attribute}.txt",
+                        name=f"{seam}_qual_{attribute}",
+                        description=(
+                            "Densitas in-situ per lubang lalu diinterpolasi"
+                            if attribute == "rd_t_per_m3" else
+                            f"Atribut kualitas {attribute}, komposit terbobot "
+                            "massa per lubang lalu diinterpolasi"),
+                        units=ATTRIBUTE_UNITS.get(attribute, "lihat sumber data"),
+                        surface=surface,
+                        support_note=f"{surface.n_points} lubang berdata kualitas "
+                                     "untuk seam ini",
+                        warnings=[
+                            "Grid ini TIDAK menyumbang ke jalur tonase. Tonase "
+                            "berasal dari poligon, dan kualitas poligon berasal "
+                            "dari lubangnya sendiri.",
+                            "Basis analitik mengikuti sumber data - periksa sheet "
+                            "Asumsi & Batasan sebelum memakainya.",
+                        ]))
 
     # --- Ekspor kontur DXF --------------------------------------------------- #
     dxf_cfg = cfg.maps.dxf_export

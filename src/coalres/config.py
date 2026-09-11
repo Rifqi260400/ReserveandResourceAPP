@@ -192,6 +192,22 @@ class DxfExportSettings(_Strict):
     clip_to_subcrop: bool = True
 
 
+class GrdExportSettings(_Strict):
+    """Ekspor grid Surfer (.grd) untuk dikonsumsi perangkat lunak tambang."""
+
+    enabled: bool = True
+    format: Literal["ascii", "binary"] = "ascii"
+    # Ketebalan uncut: seluruh interseksi, tanpa cutoff dan tanpa aturan
+    # penambangan. Ini ketebalan GEOLOGI.
+    write_uncut_thickness: bool = True
+    # Ketebalan cut: setelah cutoff ketebalan minimum dan pengecualian parting.
+    write_cut_thickness: bool = True
+    write_structure: bool = True
+    write_quality: bool = True
+    # Atribut kualitas yang di-grid. Kosong = seluruh atribut yang tersedia.
+    quality_attributes: list[str] = Field(default_factory=list)
+
+
 class MapSettings(_Strict):
     """Parameter penyajian peta kontur struktur."""
 
@@ -199,6 +215,7 @@ class MapSettings(_Strict):
     index_contour_every: int = Field(ge=1)
     label_contours: bool = True
     dxf_export: DxfExportSettings = Field(default_factory=DxfExportSettings)
+    grd_export: GrdExportSettings = Field(default_factory=GrdExportSettings)
 
 
 class Paths(_Strict):
