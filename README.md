@@ -11,12 +11,56 @@ Referensi data: PT. Budi Gema Gempita, Blok Lawai 1, Muara Lawai, Sumatera Selat
 ```bash
 pip install -r requirements.txt
 
-# 1. Audit data (gerbang keras) - selalu jalankan ini dulu
-PYTHONPATH=src python -m coalres.cli audit --config config/template.yaml
+# Antarmuka web lokal - masukan, tabel, peta, ekspor
+PYTHONPATH=src python -m coalres.cli ui --config config/minex_dummy.yaml
 
-# 2. Estimasi penuh - menolak berjalan sampai audit lulus
-PYTHONPATH=src python -m coalres.cli run --config config/template.yaml
+# atau lewat CLI
+PYTHONPATH=src python -m coalres.cli audit --config config/template.yaml
+PYTHONPATH=src python -m coalres.cli run   --config config/template.yaml
 ```
+
+UI mengikat `127.0.0.1` secara bawaan: ia berjalan di mesin Anda dan bekerja
+pada berkas lokal, sehingga data bor dan kualitas tidak pernah meninggalkan
+mesin. Seluruh logika tetap di modul pipeline, jadi UI dan CLI menghasilkan
+angka yang sama persis.
+
+## Lima keluaran utama
+
+| # | Keluaran | Berkas |
+|---|---|---|
+| 1 | **Tabel sumberdaya** | `resource_estimate.xlsx` |
+| 2 | **Kontur roof & floor** | `dxf/Seam A Roof.dxf`, `Seam A Floor.dxf`, … |
+| 3 | **Uncut grid** roof, floor, thickness | `grd/SG{seam}SR.grid`, `SF`, `ST` |
+| 4 | **Quality grid** | `grd/SG{seam}CV.grid`, `AS`, `TS`, `RD`, … |
+| 5 | **Rekap BOW** | `bow_recap.xlsx` |
+
+Kelimanya dapat diunduh dari tab Ekspor di UI. Kategori tiap berkas dibaca dari
+`manifest.json` yang ditulis pipeline saat berkasnya dibuat — bukan ditebak dari
+nama berkas, yang rapuh begitu konvensi penamaan diubah.
+
+### Penamaan grid
+
+Bawaannya meniru konvensi Minex: `SG{seam}{kode}.grid`.
+
+| Kode | Isi |
+|---|---|
+| `SR` `SF` `ST` | roof, floor, **ketebalan vertikal** — semuanya **uncut** |
+| `CST` | ketebalan setelah aturan penambangan (cut) |
+| `DP` | kedalaman roof di bawah permukaan |
+| `RD` `AS` `CV` `VM` `FC` `TS` `IM` `TM` `HG` | atribut kualitas |
+
+Template dan peta kode dapat diubah di `maps.grd_export`.
+
+### Base of weathering
+
+Baris penanda berketebalan nol pada berkas litologi (kode `W` pada dataset ini)
+menandai batas bawah pelapukan. `bow_recap.xlsx` menyandingkannya dengan tiap
+interseksi seam: berapa tebal yang lapuk, berapa yang segar, dan berapa cover di
+bawah BOW.
+
+BOW adalah **satu horizon per lubang**, bukan satu per seam — yang dilaporkan
+per seam adalah posisi seam itu terhadap BOW. Lubang tanpa BOW ditandai
+`BOW tidak tercatat`, tidak diam-diam dianggap segar.
 
 Mencoba tanpa data produksi:
 

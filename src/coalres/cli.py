@@ -139,6 +139,14 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_ui(args) -> int:
+    from .webui import serve
+
+    serve(host=args.host, port=args.port,
+          config=str(args.config) if args.config else None)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     setup()
     parser = argparse.ArgumentParser(
@@ -154,6 +162,14 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--config", required=True, type=Path)
         p.add_argument("--quiet", action="store_true")
         p.set_defaults(handler=handler)
+
+    ui = sub.add_parser("ui", help="Jalankan antarmuka web lokal.")
+    ui.add_argument("--config", type=Path, default=None,
+                    help="Konfigurasi yang dimuat saat mulai (opsional).")
+    ui.add_argument("--host", default="127.0.0.1",
+                    help="Bawaannya 127.0.0.1: data bor tidak pernah meninggalkan mesin ini.")
+    ui.add_argument("--port", type=int, default=8000)
+    ui.set_defaults(handler=cmd_ui)
 
     args = parser.parse_args(argv)
     try:

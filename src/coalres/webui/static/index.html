@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimasi Sumberdaya Batubara</title>
+<style>
+:root{
+  --surface:#fcfcfb; --panel:#ffffff; --page:#f4f4f1;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781; --line:#e1e0d9;
+  --blue:#2a78d6; --blue-dark:#184f95; --blue-light:#86b6ef; --orange:#eb6834;
+  --terukur:#104281; --tertunjuk:#2a78d6; --tereka:#86b6ef;
+  --stop:#c0362c; --warn:#b06a00; --info:#52514e; --ok:#0ca30c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);
+  font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line);
+  padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+h1{font-size:15px;margin:0;font-weight:600}
+.badge{font-size:11px;padding:3px 9px;border-radius:3px;background:var(--blue-dark);
+  color:#fff;font-weight:600;letter-spacing:.02em}
+.badge.inv{background:var(--warn)}
+.wrap{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+aside{flex:0 0 310px;min-width:280px}
+main{flex:1 1 520px;min-width:320px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:14px;margin-bottom:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-muted);margin:0 0 10px;font-weight:600}
+label{display:block;font-size:11px;color:var(--ink-2);margin:9px 0 3px}
+input[type=text],input[type=number],select{width:100%;padding:6px 8px;
+  border:1px solid var(--line);border-radius:4px;font:inherit;background:var(--surface)}
+button{font:inherit;font-weight:500;padding:7px 13px;border-radius:4px;
+  border:1px solid var(--line);background:var(--surface);cursor:pointer;color:var(--ink)}
+button:hover:not(:disabled){border-color:var(--blue)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--blue-dark);color:#fff;border-color:var(--blue-dark)}
+button.primary:hover:not(:disabled){background:var(--blue)}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px;
+  flex-wrap:wrap}
+.tab{padding:8px 14px;border:none;background:none;border-bottom:2px solid transparent;
+  color:var(--ink-2);border-radius:0}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--blue-dark);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line);
+  white-space:nowrap}
+th{color:var(--ink-muted);font-weight:600;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.04em;text-align:right}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+tbody tr:hover{background:var(--page)}
+tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
+.scroll{overflow-x:auto}
+.sev{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;
+  border-radius:3px;color:#fff;min-width:42px;text-align:center}
+.sev.STOP{background:var(--stop)}.sev.WARN{background:var(--warn)}
+.sev.INFO{background:var(--info)}
+.finding{border-bottom:1px solid var(--line);padding:8px 0;display:flex;gap:10px}
+.finding .body{flex:1}
+.finding .where{color:var(--ink-muted);font-size:11px}
+.finding .remedy{color:var(--ink-2);font-size:11.5px;margin-top:3px;
+  padding-left:9px;border-left:2px solid var(--line)}
+.msg{padding:9px 11px;border-radius:4px;font-size:12px;margin-bottom:12px}
+.msg.err{background:#fdeceb;color:var(--stop);border:1px solid #f3c9c5}
+.msg.ok{background:#eef7ee;color:#0a6b0a;border:1px solid #cbe6cb}
+.msg.warn{background:#fdf4e3;color:var(--warn);border:1px solid #f0dfba}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11.5px}
+.kv span:first-child{color:var(--ink-muted)}
+.kv span:last-child{font-weight:600;text-align:right}
+#mapwrap{position:relative;background:var(--surface);border:1px solid var(--line);
+  border-radius:5px;overflow:hidden}
+svg{display:block;width:100%;height:min(62vh,560px);cursor:grab;touch-action:none}
+svg.drag{cursor:grabbing}
+.legend{position:absolute;top:10px;right:10px;background:rgba(252,252,251,.95);
+  border:1px solid var(--line);border-radius:4px;padding:9px 11px;font-size:11px}
+.legend div{display:flex;align-items:center;gap:7px;margin:3px 0}
+.sw{width:15px;height:3px;border-radius:1px;flex:0 0 15px}
+.sw.box{height:11px;border-radius:2px}
+.toggles{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 0;font-size:11.5px}
+.toggles label{display:flex;align-items:center;gap:5px;margin:0;cursor:pointer}
+.exp{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:11px 0;border-bottom:1px solid var(--line)}
+.exp .meta{color:var(--ink-muted);font-size:11px}
+.hint{color:var(--ink-muted);font-size:11px;margin-top:7px;line-height:1.45}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
+  border-top-color:var(--blue-dark);border-radius:50%;animation:s .7s linear infinite;
+  vertical-align:-1px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+.empty{color:var(--ink-muted);padding:26px 0;text-align:center;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Estimasi Sumberdaya Batubara</h1>
+  <span class="badge" id="label">belum dimuat</span>
+  <span class="hint" id="cfgpath" style="margin:0"></span>
+</header>
+
+<div class="wrap">
+<aside>
+  <div class="card">
+    <h2>Data masukan</h2>
+    <label for="path">Berkas konfigurasi (.yaml)</label>
+    <input type="text" id="path" value="config/minex_dummy.yaml" spellcheck="false">
+    <div class="row">
+      <button id="load" class="primary">Muat</button>
+      <button id="audit" disabled>Audit</button>
+      <button id="run" disabled>Jalankan</button>
+    </div>
+    <p class="hint">Audit adalah gerbang keras. Estimasi menolak berjalan
+      selama masih ada temuan STOP.</p>
+  </div>
+  <div class="card" id="settings" hidden>
+    <h2>Setelan berlaku</h2>
+    <div id="settingsBody"></div>
+  </div>
+  <div class="card" id="inputs" hidden>
+    <h2>Berkas sumber</h2>
+    <div id="inputsBody"></div>
+  </div>
+</aside>
+
+<main>
+  <div id="msg"></div>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="audit" aria-selected="true">Audit</button>
+    <button class="tab" role="tab" data-tab="table" aria-selected="false">Tabel sumberdaya</button>
+    <button class="tab" role="tab" data-tab="map" aria-selected="false">Peta</button>
+    <button class="tab" role="tab" data-tab="export" aria-selected="false">Ekspor</button>
+  </div>
+
+  <section id="tab-audit" class="card">
+    <div class="empty">Muat konfigurasi lalu jalankan audit.</div>
+  </section>
+
+  <section id="tab-table" hidden></section>
+
+  <section id="tab-map" hidden>
+    <div class="card">
+      <h2>Kontur seam</h2>
+      <div class="row" style="margin:0">
+        <select id="seam" style="flex:0 0 150px"></select>
+        <select id="interval" style="flex:0 0 150px">
+          <option value="2">Interval 2 m</option>
+          <option value="5" selected>Interval 5 m</option>
+          <option value="10">Interval 10 m</option>
+        </select>
+        <button id="reload">Muat ulang</button>
+        <button id="fit">Pas layar</button>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="tRoof" checked> Kontur roof</label>
+        <label><input type="checkbox" id="tFloor" checked> Kontur floor</label>
+        <label><input type="checkbox" id="tPoly" checked> Poligon kelas</label>
+        <label><input type="checkbox" id="tSub" checked> Subcrop</label>
+        <label><input type="checkbox" id="tHole" checked> Lubang bor</label>
+      </div>
+    </div>
+    <div id="mapwrap">
+      <svg id="map"><g id="scene"></g></svg>
+      <div class="legend" id="legend"></div>
+    </div>
+    <p class="hint">Seret untuk menggeser, gulir untuk memperbesar.
+      Poligon kelas dan kontur berasal dari model yang sama dengan tabel.</p>
+  </section>
+
+  <section id="tab-export" class="card">
+    <div class="empty">Jalankan estimasi lebih dulu.</div>
+  </section>
+</main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = (v, d = 2) => v === null || v === undefined || Number.isNaN(v)
+  ? "—" : Number(v).toLocaleString("id-ID", {minimumFractionDigits: d, maximumFractionDigits: d});
+const fmt0 = v => fmt(v, 0);
+let SUMMARY = null, MAP = null, VIEW = null;
+
+function msg(text, kind = "err") {
+  $("#msg").innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : "";
+}
+async function api(url, options) {
+  const res = await fetch(url, options);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+function busy(button, on, text) {
+  button.disabled = on;
+  if (on) { button.dataset.label = button.textContent; button.innerHTML = `<span class="spin"></span>${text}`; }
+  else if (button.dataset.label) button.textContent = button.dataset.label;
+}
+
+/* ---- tab ---- */
+document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => {
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t === tab));
+  ["audit", "table", "map", "export"].forEach(name =>
+    $("#tab-" + name).hidden = name !== tab.dataset.tab);
+  if (tab.dataset.tab === "map" && SUMMARY && !MAP) loadMap();
+});
+
+/* ---- konfigurasi ---- */
+$("#load").onclick = async () => {
+  const button = $("#load");
+  busy(button, true, "Memuat");
+  try {
+    const data = await api("/api/config/load", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({path: $("#path").value.trim()}),
+    });
+    renderConfig(data);
+    $("#audit").disabled = $("#run").disabled = false;
+    msg("Konfigurasi dimuat. Jalankan audit sebelum estimasi.", "ok");
+  } catch (e) { msg(e.message); }
+  busy(button, false);
+};
+
+function renderConfig(data) {
+  const c = data.config, r = c.rpeee_constraints, inventori = !r.max_depth_m;
+  $("#label").textContent = data.label;
+  $("#label").className = "badge" + (inventori ? " inv" : "");
+  $("#cfgpath").textContent = data.path;
+
+  const radii = c.classification_radii_m[c.geological_condition];
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+  $("#settingsBody").innerHTML =
+    kv("Format masukan", c.input_format) +
+    kv("Metode", c.estimation_method) +
+    kv("Kondisi geologi", c.geological_condition) +
+    kv("Radius (m)", `${radii.measured} / ${radii.indicated} / ${radii.inferred}`) +
+    kv("Tebal minimum", c.cutoffs.min_seam_thickness_m + " m") +
+    kv("Batas kedalaman", r.max_depth_m ? r.max_depth_m + " m" : "tidak diterapkan") +
+    kv("Sumber tebal", c.coal_thickness_source) +
+    kv("Perlakuan core loss", c.core_loss_treatment) +
+    (c.assumed_rd_t_per_m3 ? kv("RD asumsi", c.assumed_rd_t_per_m3 + " t/m³") : "");
+  $("#settings").hidden = false;
+
+  const m = c.minex, p = c.paths;
+  const file = (k, v) => v ? `<div class="kv"><span>${k}</span><span title="${v}">${String(v).split("/").pop()}</span></div>` : "";
+  $("#inputsBody").innerHTML = m
+    ? file("Survey", m.survey_file) + file("Litologi", m.lithology_file) +
+      file("Kualitas", m.quality_file) + file("Topografi", m.topography_file) +
+      file("Sesar", m.faults_file) + file("Keluaran", p.output_dir)
+    : file("Workbook", p.workbook_dir) + file("LAS", p.las_dir) +
+      file("Kualitas", p.quality_table) + file("Topografi", p.topography_dxf) +
+      file("Keluaran", p.output_dir);
+  $("#inputs").hidden = false;
+
+  if (inventori) msg("max_depth_m kosong: seluruh keluaran akan berlabel " +
+    "<b>Inventori Batubara</b>, bukan Sumberdaya.", "warn");
+}
+
+/* ---- audit ---- */
+$("#audit").onclick = async () => {
+  const button = $("#audit");
+  busy(button, true, "Mengaudit");
+  try { renderAudit(await api("/api/audit", {method: "POST"})); msg(""); }
+  catch (e) { msg(e.message); }
+  busy(button, false);
+};
+
+function renderAudit(a) {
+  const c = a.counts;
+  const head = `<div class="msg ${a.passed ? "ok" : "err"}">
+    ${a.passed ? "Phase 0 LULUS" : "Phase 0 TIDAK LULUS"} —
+    STOP ${c.STOP} · WARN ${c.WARN} · INFO ${c.INFO}</div>`;
+  const items = a.findings.map(f => {
+    const where = [f.hole_id, f.seam].filter(Boolean).join(" / ");
+    return `<div class="finding"><span class="sev ${f.severity}">${f.severity}</span>
+      <div class="body">${where ? `<div class="where">${where}</div>` : ""}
+      <div>${f.message}</div>
+      ${f.remedy ? `<div class="remedy">${f.remedy}</div>` : ""}</div></div>`;
+  }).join("");
+  $("#tab-audit").innerHTML = head + (items || '<div class="empty">Tidak ada temuan.</div>');
+  document.querySelector('[data-tab=audit]').click();
+}
+
+/* ---- jalankan ---- */
+$("#run").onclick = async () => {
+  const button = $("#run");
+  busy(button, true, "Menghitung");
+  try {
+    SUMMARY = await api("/api/run", {method: "POST"});
+    MAP = null;
+    renderAudit(SUMMARY.audit);
+    renderTable(SUMMARY);
+    await renderExports();
+    const seams = $("#seam");
+    seams.innerHTML = SUMMARY.seams.map(s => `<option>${s}</option>`).join("");
+    msg(`Selesai. Keluaran ditulis ke <b>${SUMMARY.output_dir}</b>.`, "ok");
+    document.querySelector('[data-tab=table]').click();
+  } catch (e) { msg(e.message); }
+  busy(button, false);
+};
+
+function table(rows, columns, foot) {
+  if (!rows.length) return '<div class="empty">Tidak ada data.</div>';
+  const head = columns.map(c => `<th class="${c.left ? "l" : ""}">${c.label}</th>`).join("");
+  const body = rows.map(r => "<tr>" + columns.map(c =>
+    `<td class="${c.left ? "l" : ""}">${c.left ? (r[c.key] ?? "—") : fmt(r[c.key], c.d ?? 2)}</td>`
+  ).join("") + "</tr>").join("");
+  const tfoot = foot ? `<tfoot><tr>${foot}</tr></tfoot>` : "";
+  return `<div class="scroll"><table><thead><tr>${head}</tr></thead>
+    <tbody>${body}</tbody>${tfoot}</table></div>`;
+}
+
+function renderTable(s) {
+  const total = s.total[0] || {};
+  const cols = [
+    {key: "seam", label: "Seam", left: true},
+    {key: "class", label: "Kelas", left: true},
+    {key: "area_ha", label: "Luas (ha)"},
+    {key: "coal_thickness_m", label: "Tebal (m)"},
+    {key: "rd_t_per_m3", label: "RD"},
+    {key: "tonnes", label: "Tonase", d: 0},
+  ];
+  const foot = `<td class="l" colspan="2">TOTAL</td>
+    <td>${fmt(total.area_ha)}</td><td>${fmt(total.coal_thickness_m)}</td>
+    <td>${fmt(total.rd_t_per_m3)}</td><td>${fmt0(total.tonnes)}</td>`;
+
+  const quality = ["ASH", "CV", "TS", "VM", "FC", "MOISTURE"].filter(k => k in (s.by_seam[0] || {}));
+  const qualityCols = [{key: "seam", label: "Seam", left: true},
+    {key: "tonnes", label: "Tonase", d: 0}, ...quality.map(k => ({key: k, label: k}))];
+
+  $("#tab-table").innerHTML = `
+    <div class="card"><h2>${s.label} — per seam dan kelas</h2>${table(s.by_seam_class, cols, foot)}
+      <p class="hint">Metode ${s.method} · kondisi geologi ${s.geological_condition} ·
+      radius ${s.radii.measured}/${s.radii.indicated}/${s.radii.inferred} m</p></div>
+    <div class="card"><h2>Kualitas terbobot tonase</h2>${table(s.by_seam, qualityCols)}</div>
+    <div class="card"><h2>Rekonsiliasi RPEEE</h2>${table(s.rpeee, [
+      {key: "batasan", label: "Batasan", left: true},
+      {key: "diterapkan", label: "Diterapkan", left: true},
+      {key: "tonnes_sebelum", label: "Sebelum", d: 0},
+      {key: "tonnes_dibuang", label: "Dibuang", d: 0},
+      {key: "tonnes_sesudah", label: "Sesudah", d: 0}])}</div>
+    <div class="card"><h2>Sensitivitas RD</h2>${table(s.rd_sensitivity, [
+      {key: "rd_delta_pct", label: "Δ RD (%)", d: 0},
+      {key: "tonnes", label: "Tonase", d: 0},
+      {key: "difference_tonnes", label: "Selisih", d: 0}])}
+      <p class="hint">Tonase linear terhadap RD. Di sinilah kesalahan senyap terbesar berada.</p></div>
+    ${s.bow_summary.length ? `<div class="card"><h2>Base of weathering</h2>${table(s.bow_summary, [
+      {key: "seam", label: "Seam", left: true},
+      {key: "n_intersections", label: "n", d: 0},
+      {key: "bow_depth_median_m", label: "BOW median (m)"},
+      {key: "n_seluruhnya_lapuk", label: "Lapuk", d: 0},
+      {key: "n_terpotong_bow", label: "Terpotong", d: 0},
+      {key: "n_seluruhnya_segar", label: "Segar", d: 0},
+      {key: "tebal_lapuk_total_m", label: "Tebal lapuk (m)"}])}</div>` : ""}`;
+}
+
+/* ---- peta ---- */
+const COLOUR = {roof: "#86b6ef", roofIndex: "#184f95", floor: "#f0b49a",
+  floorIndex: "#b8471c", subcrop: "#eb6834",
+  Terukur: "#104281", Tertunjuk: "#2a78d6", Tereka: "#86b6ef"};
+
+async function loadMap() {
+  const seam = $("#seam").value, interval = $("#interval").value;
+  if (!seam) return;
+  try {
+    MAP = await api(`/api/map/${encodeURIComponent(seam)}?interval=${interval}`);
+    drawMap();
+  } catch (e) { msg(e.message); }
+}
+$("#reload").onclick = loadMap;
+$("#seam").onchange = loadMap;
+$("#interval").onchange = loadMap;
+["tRoof", "tFloor", "tPoly", "tSub", "tHole"].forEach(id => $("#" + id).onchange = drawMap);
+
+function drawMap() {
+  if (!MAP) return;
+  const parts = [], indexEvery = Number($("#interval").value) * 5;
+  let xs = [], ys = [];
+  const track = pts => pts.forEach(p => { xs.push(p[0]); ys.push(p[1]); });
+
+  if ($("#tPoly").checked) MAP.polygons.forEach(p => {
+    track(p.points);
+    /* Poligon diberi sedikit transparansi supaya kontur di atasnya tetap
+       terbaca; tanpa itu kontur hilang di area kelas Terukur yang gelap. */
+    parts.push(`<polygon points="${p.points.map(q => q.join(",")).join(" ")}"
+      fill="${COLOUR[p.class]}" fill-opacity="0.68" stroke="#fcfcfb" stroke-width="1"
+      vector-effect="non-scaling-stroke">
+      <title>${p.class} — ${p.hole_id} — ${fmt0(p.tonnes)} t</title></polygon>`);
+  });
+  [["floor", "tFloor"], ["roof", "tRoof"]].forEach(([key, toggle]) => {
+    if (!$("#" + toggle).checked) return;
+    MAP.contours[key].forEach(c => {
+      track(c.points);
+      const isIndex = Math.abs(c.z % indexEvery) < 1e-6;
+      const colour = COLOUR[isIndex ? key + "Index" : key];
+      parts.push(`<polyline points="${c.points.map(q => q.join(",")).join(" ")}"
+        fill="none" stroke="${colour}" stroke-width="${isIndex ? 1.5 : .7}"
+        vector-effect="non-scaling-stroke"><title>${key} RL ${c.z} m</title></polyline>`);
+    });
+  });
+  if ($("#tSub").checked) MAP.subcrop.forEach(ring => {
+    track(ring);
+    parts.push(`<polygon points="${ring.map(q => q.join(",")).join(" ")}" fill="none"
+      stroke="${COLOUR.subcrop}" stroke-width="2" vector-effect="non-scaling-stroke"/>`);
+  });
+  if ($("#tHole").checked) MAP.holes.forEach(h => {
+    xs.push(h.x); ys.push(h.y);
+    parts.push(`<circle cx="${h.x}" cy="${h.y}" r="4" fill="#fcfcfb" stroke="#0b0b0b"
+      stroke-width="1" vector-effect="non-scaling-stroke">
+      <title>${h.hole_id} — tebal ${fmt(h.thickness)} m</title></circle>`);
+  });
+
+  // Y dibalik: sumbu SVG turun ke bawah, northing naik ke atas.
+  $("#scene").innerHTML = `<g transform="scale(1,-1)">${parts.join("")}</g>`;
+  if (xs.length) {
+    const pad = (Math.max(...xs) - Math.min(...xs)) * .04 || 50;
+    VIEW = {x: Math.min(...xs) - pad, y: -Math.max(...ys) - pad,
+      w: Math.max(...xs) - Math.min(...xs) + pad * 2,
+      h: Math.max(...ys) - Math.min(...ys) + pad * 2};
+    applyView();
+  }
+  const item = (colour, label, box) =>
+    `<div><span class="sw ${box ? "box" : ""}" style="background:${colour}"></span>${label}</div>`;
+  $("#legend").innerHTML =
+    ($("#tPoly").checked ? ["Terukur", "Tertunjuk", "Tereka"]
+      .filter(c => MAP.polygons.some(p => p.class === c))
+      .map(c => item(COLOUR[c], c, true)).join("") : "") +
+    ($("#tRoof").checked ? item(COLOUR.roofIndex, "Kontur roof") : "") +
+    ($("#tFloor").checked ? item(COLOUR.floorIndex, "Kontur floor") : "") +
+    ($("#tSub").checked ? item(COLOUR.subcrop, "Subcrop") : "");
+}
+function applyView() {
+  if (VIEW) $("#map").setAttribute("viewBox", `${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}`);
+}
+$("#fit").onclick = drawMap;
+
+(() => {
+  const svg = $("#map"); let dragging = null;
+  svg.addEventListener("pointerdown", e => {
+    dragging = {x: e.clientX, y: e.clientY, v: {...VIEW}};
+    svg.classList.add("drag"); svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener("pointermove", e => {
+    if (!dragging || !VIEW) return;
+    const scale = VIEW.w / svg.clientWidth;
+    VIEW.x = dragging.v.x - (e.clientX - dragging.x) * scale;
+    VIEW.y = dragging.v.y - (e.clientY - dragging.y) * scale;
+    applyView();
+  });
+  svg.addEventListener("pointerup", e => {
+    dragging = null; svg.classList.remove("drag"); svg.releasePointerCapture(e.pointerId);
+  });
+  svg.addEventListener("wheel", e => {
+    if (!VIEW) return;
+    e.preventDefault();
+    const k = e.deltaY > 0 ? 1.12 : 1 / 1.12;
+    const rect = svg.getBoundingClientRect();
+    const fx = (e.clientX - rect.left) / rect.width, fy = (e.clientY - rect.top) / rect.height;
+    VIEW.x += VIEW.w * fx * (1 - k); VIEW.y += VIEW.h * fy * (1 - k);
+    VIEW.w *= k; VIEW.h *= k;
+    applyView();
+  }, {passive: false});
+})();
+
+/* ---- ekspor ---- */
+async function renderExports() {
+  const data = await api("/api/exports");
+  const bytes = n => n > 1e6 ? (n / 1e6).toFixed(1) + " MB"
+    : n > 1e3 ? (n / 1e3).toFixed(0) + " KB" : n + " B";
+  $("#tab-export").innerHTML = `<h2>Ekspor</h2>` +
+    Object.entries(data.kinds).map(([kind, v]) => `<div class="exp">
+      <div><div>${v.label}</div>
+        <div class="meta">${v.count} berkas · ${bytes(v.bytes)}</div></div>
+      <button ${v.count ? "" : "disabled"} onclick="location='/api/export/${kind}'">Unduh</button>
+    </div>`).join("") +
+    `<p class="hint">Berkas ditulis ke <b>${data.output_dir}</b>. Unduhan berisi
+     satu berkas, atau zip bila kategorinya memuat beberapa berkas.</p>`;
+}
+</script>
+</body>
+</html>

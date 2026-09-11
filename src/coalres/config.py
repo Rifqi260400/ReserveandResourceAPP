@@ -193,10 +193,32 @@ class DxfExportSettings(_Strict):
 
 
 class GrdExportSettings(_Strict):
-    """Ekspor grid Surfer (.grd) untuk dikonsumsi perangkat lunak tambang."""
+    """Ekspor grid Surfer untuk dikonsumsi perangkat lunak tambang.
+
+    Penamaan berkas mengikuti konvensi pengguna. Bawaannya meniru konvensi
+    Minex yang terlihat pada data referensi: SG<seam><kode>.grid, mis.
+    SG05SR (roof), SG05SF (floor), SG05ST (thickness), SG05CV (calorific value).
+    """
 
     enabled: bool = True
     format: Literal["ascii", "binary"] = "ascii"
+
+    filename_template: str = "SG{seam}{code}"
+    extension: str = ".grid"
+    # Kode permukaan. Ketebalan adalah ketebalan VERTIKAL (roof RL - floor RL).
+    structure_codes: dict[str, str] = Field(
+        default_factory=lambda: {"roof": "SR", "floor": "SF", "thickness": "ST",
+                                 "depth": "DP"}
+    )
+    # Kode atribut kualitas. Atribut yang tidak terdaftar memakai namanya sendiri.
+    quality_codes: dict[str, str] = Field(
+        default_factory=lambda: {
+            "rd_t_per_m3": "RD", "ASH": "AS", "ASH_adb": "AS", "CV": "CV",
+            "CV_adb": "CV", "VM": "VM", "VM_adb": "VM", "FC": "FC",
+            "FC_adb": "FC", "TS": "TS", "TS_adb": "TS", "MOISTURE": "IM",
+            "M_adb": "IM", "TM_ar": "TM", "HGI": "HG",
+        }
+    )
     # Ketebalan uncut: seluruh interseksi, tanpa cutoff dan tanpa aturan
     # penambangan. Ini ketebalan GEOLOGI.
     write_uncut_thickness: bool = True

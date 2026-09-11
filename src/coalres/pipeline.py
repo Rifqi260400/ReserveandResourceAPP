@@ -60,8 +60,11 @@ class Results:
     polygons: list[ResourcePolygon]
     frames: dict[str, pd.DataFrame]
     surfaces: dict[str, dict[str, Surface]]
-    uncut_surfaces: dict[str, Surface] = field(default_factory=dict)
+    uncut_surfaces: dict[str, dict[str, Surface]] = field(default_factory=dict)
     quality_surfaces: dict[str, dict[str, Surface]] = field(default_factory=dict)
+    bow_table: pd.DataFrame | None = None
+    bow_detail: pd.DataFrame | None = None
+    bow_summary: pd.DataFrame | None = None
     outputs: list[Path] = field(default_factory=list)
 
 
@@ -316,8 +319,8 @@ def build_surfaces(
     return topo, surfaces
 
 
-def build_uncut_thickness(dataset, inputs: Inputs, cfg: Config,
-                          reference: Surface) -> dict[str, Surface]:
+def build_uncut_surfaces(dataset, inputs: Inputs, cfg: Config,
+                         reference: Surface) -> dict[str, dict[str, Surface]]:
     """Grid ketebalan UNCUT: seluruh interseksi, tanpa aturan penambangan.
 
     "Uncut" berarti ketebalan in-situ mentah sebelum aturan penambangan:
@@ -347,19 +350,27 @@ def build_uncut_thickness(dataset, inputs: Inputs, cfg: Config,
         if item.hole_id not in lookup:
             continue
         east, north, _ = lookup[item.hole_id]
-        rows.append({"seam": item.seam, "east": east, "north": north,
-                     # Uncut memakai GROSS thickness: amplop roof-floor penuh,
-                     # parting belum dikeluarkan.
-                     "uncut_m": item.gross_thickness_m})
+        east, north, rl = lookup[item.hole_id]
+        rows.append({
+            "seam": item.seam, "east": east, "north": north,
+            "roof": rl - item.roof_m, "floor": rl - item.floor_m,
+            # Ketebalan VERTIKAL = RL roof - RL floor. Untuk lubang tegak ini
+            # sama dengan gross thickness: amplop roof-floor penuh, parting
+            # belum dikeluarkan.
+            "thickness": item.gross_thickness_m,
+        })
     frame = pd.DataFrame(rows)
 
-    surfaces: dict[str, Surface] = {}
+    surfaces: dict[str, dict[str, Surface]] = {}
     for seam, group in frame.groupby("seam", sort=False):
         if len(group) < 3:
             continue
-        surface = build_surface(group["east"], group["north"], group["uncut_m"],
-                                spacing=reference.spacing, name=f"{seam}_uncut_thickness")
-        surfaces[seam] = _align(surface, reference)
+        per_key: dict[str, Surface] = {}
+        for key in ("roof", "floor", "thickness"):
+            surface = build_surface(group["east"], group["north"], group[key],
+                                    spacing=reference.spacing, name=f"{seam}_uncut_{key}")
+            per_key[key] = _align(surface, reference)
+        surfaces[seam] = per_key
     return surfaces
 
 
@@ -472,14 +483,23 @@ def run(config_path: str | Path, verbose: bool = True) -> Results:
         "plan_overlap": plan_overlap_report(polygons, cfg),
     }
     reference = topo
-    uncut = build_uncut_thickness(dataset, inputs, cfg, reference)
+    uncut = build_uncut_surfaces(dataset, inputs, cfg, reference)
     quality_grids = build_quality_surfaces(
         intercepts, reference,
         cfg.maps.grd_export.quality_attributes or None,
     )
+    bow_table = bow_detail = bow_summary = None
+    if dataset is not None:
+        from .bow import extract_bow, seam_vs_bow, summarise_by_seam
+
+        bow_table = extract_bow(dataset, cfg)
+        bow_detail = seam_vs_bow(intercepts, bow_table)
+        bow_summary = summarise_by_seam(bow_detail)
+
     return Results(config=cfg, audit=audit, polygons=polygons, frames=frames,
                    surfaces={"topo": {"topo": topo}, **surfaces},
-                   uncut_surfaces=uncut, quality_surfaces=quality_grids)
+                   uncut_surfaces=uncut, quality_surfaces=quality_grids,
+                   bow_table=bow_table, bow_detail=bow_detail, bow_summary=bow_summary)
 
 
 def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[Path]:
@@ -487,6 +507,15 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
     out_dir = cfg.paths.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    # Kategori dicatat SAAT PENULISAN, bukan ditebak dari akhiran nama berkas.
+    # Menebak dari nama rapuh: kode kualitas dan kode struktur bisa bertabrakan
+    # begitu konvensi penamaan diubah pengguna.
+    manifest: dict[str, list[str]] = {}
+
+    def record(path: Path, kind: str) -> Path:
+        manifest.setdefault(kind, []).append(str(path.relative_to(out_dir)))
+        written.append(path)
+        return path
     frames = results.frames
 
     seam_assumptions = assumptions(cfg) + frames["rd_notes"]["catatan konversi RD"].tolist()
@@ -499,14 +528,14 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
         if c in frames["intercepts"].columns
     ]] if not frames["intercepts"].empty else pd.DataFrame()
 
-    written.append(write_excel(
+    record(write_excel(
         out_dir / "resource_estimate.xlsx", cfg,
         by_seam_class=frames["by_seam_class"], by_seam=frames["by_seam"],
         grand_total=frames["grand_total"], quality_by_seam_class=frames["by_seam_class"],
         intercepts=frames["intercepts"], rd_sensitivity=frames["rd_sensitivity"],
         rpeee_reconciliation=frames["rpeee"], assumptions=assumption_frame,
         audit_findings=frames["audit"], thickness_quality=thickness_quality,
-    ))
+    ), "resource_table")
     written += write_vectors(results.polygons, cfg, out_dir / "vector")
 
     holes = frames["intercepts"][["east", "north"]].drop_duplicates() \
@@ -589,79 +618,83 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                                     maps_dir / f"{seam}_klasifikasi.png",
                                     holes=holes, overlays=overlays))
 
-    # --- Ekspor grid .grd ---------------------------------------------------- #
+    # --- Ekspor grid ---------------------------------------------------------- #
     grd_cfg = cfg.maps.grd_export
     if grd_cfg.enabled:
         from .grdout import ATTRIBUTE_UNITS, write_grd, write_sidecar
 
         grd_dir = out_dir / "grd"
-        suffix = "grd"
+
+        def grid_path(seam: str, code: str) -> Path:
+            return grd_dir / (grd_cfg.filename_template.format(seam=seam, code=code)
+                              + grd_cfg.extension)
+
         support = ("di dalam convex hull lubang yang menembus seam ini; "
                    "di luar itu kosong (tidak diekstrapolasi)")
 
-        for seam, surface in results.uncut_surfaces.items():
-            if not grd_cfg.write_uncut_thickness:
-                break
-            written.append(write_grd(surface, grd_dir / f"{seam}_uncut.{suffix}",
-                                     fmt=grd_cfg.format))
-            written.append(write_sidecar(
-                grd_dir / f"{seam}_uncut.txt", name=f"{seam}_uncut",
-                description="Ketebalan seam UNCUT - amplop roof ke floor, sebelum "
-                            "aturan penambangan apa pun",
-                units="meter", surface=surface, support_note=support,
-                warnings=[
-                    "UNCUT berarti ketebalan geologi in-situ: TANPA ketebalan "
-                    "minimum, TANPA pengecualian parting, TANPA dilusi, TANPA cutoff.",
-                    "Ini BUKAN ketebalan yang dapat ditambang. Untuk itu pakai "
-                    f"{seam}_cut.{suffix}.",
-                    "Memakai grid ini langsung untuk estimasi cadangan akan "
-                    "MELEBIHKAN hasilnya.",
-                ]))
+        # UNCUT: roof, floor, dan ketebalan vertikal, dari interseksi PRA-cutoff.
+        if grd_cfg.write_uncut_thickness:
+            for seam, surfaces in results.uncut_surfaces.items():
+                for key, description, units in (
+                    ("roof", "RL roof seam (uncut)", "meter RL"),
+                    ("floor", "RL floor seam (uncut)", "meter RL"),
+                    ("thickness", "Ketebalan VERTIKAL seam (uncut) = RL roof - RL floor",
+                     "meter"),
+                ):
+                    code = grd_cfg.structure_codes.get(key, key.upper())
+                    surface = surfaces[key]
+                    path = grid_path(seam, code)
+                    record(write_grd(surface, path, fmt=grd_cfg.format), "uncut_grid")
+                    record(write_sidecar(
+                        path.with_suffix(".txt"), name=path.stem,
+                        description=description, units=units, surface=surface,
+                        support_note=support,
+                        warnings=[
+                            "UNCUT: dibangun dari interseksi PRA-cutoff. Tanpa "
+                            "ketebalan minimum, tanpa pengecualian parting, tanpa "
+                            "dilusi, tanpa cutoff.",
+                            "Ini geometri GEOLOGI, bukan yang dapat ditambang.",
+                            "Memakainya langsung untuk estimasi cadangan akan "
+                            "MELEBIHKAN hasilnya.",
+                        ]), "uncut_grid")
 
+        # CUT: ketebalan setelah aturan penambangan, dan kedalaman.
         for seam, surfaces in results.surfaces.items():
             if seam == "topo":
                 continue
             if grd_cfg.write_cut_thickness and "thickness" in surfaces:
+                code = grd_cfg.structure_codes.get("thickness", "ST")
+                path = grid_path(seam, f"C{code}")
                 surface = surfaces["thickness"]
-                written.append(write_grd(surface, grd_dir / f"{seam}_cut.{suffix}",
-                                         fmt=grd_cfg.format))
-                written.append(write_sidecar(
-                    grd_dir / f"{seam}_cut.txt", name=f"{seam}_cut",
-                    description="Ketebalan batubara setelah aturan penambangan",
+                record(write_grd(surface, path, fmt=grd_cfg.format), "cut_grid")
+                record(write_sidecar(
+                    path.with_suffix(".txt"), name=path.stem,
+                    description="Ketebalan batubara setelah aturan penambangan (cut)",
                     units="meter", surface=surface, support_note=support,
                     warnings=[
                         f"Cutoff ketebalan minimum {cfg.cutoffs.min_seam_thickness_m} m "
                         "sudah diterapkan.",
-                        f"Parting di atas {cfg.cutoffs.max_parting_thickness_m} m "
-                        "memisahkan seam; di bawahnya masuk gross tetapi keluar "
-                        "dari tebal batubara.",
                         "Dilusi dan recovery penambangan BELUM diterapkan - keduanya "
                         "milik tahap cadangan.",
-                    ]))
-            if grd_cfg.write_structure:
-                for key, label, units in (("roof", "RL roof seam", "meter RL"),
-                                          ("floor", "RL floor seam", "meter RL"),
-                                          ("depth", "Kedalaman roof di bawah permukaan", "meter")):
-                    if key not in surfaces:
-                        continue
-                    written.append(write_grd(surfaces[key],
-                                             grd_dir / f"{seam}_{key}.{suffix}",
-                                             fmt=grd_cfg.format))
+                    ]), "cut_grid")
+            if grd_cfg.write_structure and "depth" in surfaces:
+                code = grd_cfg.structure_codes.get("depth", "DP")
+                record(write_grd(surfaces["depth"], grid_path(seam, code),
+                                 fmt=grd_cfg.format), "depth_grid")
 
+        # KUALITAS per seam.
         if grd_cfg.write_quality:
             for seam, attributes in results.quality_surfaces.items():
                 for attribute, surface in attributes.items():
-                    written.append(write_grd(
-                        surface, grd_dir / f"{seam}_qual_{attribute}.{suffix}",
-                        fmt=grd_cfg.format))
-                    written.append(write_sidecar(
-                        grd_dir / f"{seam}_qual_{attribute}.txt",
-                        name=f"{seam}_qual_{attribute}",
-                        description=(
-                            "Densitas in-situ per lubang lalu diinterpolasi"
-                            if attribute == "rd_t_per_m3" else
-                            f"Atribut kualitas {attribute}, komposit terbobot "
-                            "massa per lubang lalu diinterpolasi"),
+                    code = grd_cfg.quality_codes.get(attribute, attribute.upper())
+                    path = grid_path(seam, code)
+                    record(write_grd(surface, path, fmt=grd_cfg.format), "quality_grid")
+                    record(write_sidecar(
+                        path.with_suffix(".txt"), name=path.stem,
+                        description=("Densitas in-situ per lubang lalu diinterpolasi"
+                                     if attribute == "rd_t_per_m3" else
+                                     f"Atribut kualitas {attribute}, komposit terbobot "
+                                     "massa per lubang lalu diinterpolasi"),
                         units=ATTRIBUTE_UNITS.get(attribute, "lihat sumber data"),
                         surface=surface,
                         support_note=f"{surface.n_points} lubang berdata kualitas "
@@ -672,7 +705,16 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                             "dari lubangnya sendiri.",
                             "Basis analitik mengikuti sumber data - periksa sheet "
                             "Asumsi & Batasan sebelum memakainya.",
-                        ]))
+                        ]), "quality_grid")
+
+    # --- Rekap Base of Weathering --------------------------------------------- #
+    if results.bow_detail is not None and not results.bow_detail.empty:
+        from .bow import write_bow_excel
+
+        record(write_bow_excel(
+            out_dir / "bow_recap.xlsx", results.bow_table,
+            results.bow_detail, results.bow_summary, cfg,
+        ), "bow_recap")
 
     # --- Ekspor kontur DXF --------------------------------------------------- #
     dxf_cfg = cfg.maps.dxf_export
@@ -701,7 +743,7 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
             subcrop_masks=masks, holes=holes_full, subcrop_lines=lines,
             topography=topo_surface,
         )
-        written.append(combined)
+        record(combined, "contours_dxf")
         log.info(f"DXF gabungan: {combined.name} "
                  f"({sum(v.get('polylines', 0) for v in summary.values())} polyline, "
                  f"{len(summary)} layer)")
@@ -722,7 +764,7 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                         holes=holes_full, subcrop_lines=lines, topography=topo_surface,
                         seam_filter=[seam], surface_filter=[surface_key],
                     )
-                    written.append(path)
+                    record(path, "contours_dxf")
 
         if dxf_cfg.per_seam_files:
             for seam in seam_surfaces:
@@ -734,7 +776,7 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                     holes=holes_full, subcrop_lines=lines, topography=topo_surface,
                     seam_filter=[seam],
                 )
-                written.append(path)
+                record(path, "contours_dxf")
 
     from .logs import plot_hole
     for wb in inputs.workbooks:
@@ -757,5 +799,10 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
         rpeee_reconciliation=frames["rpeee"], hole_reconciliation=hole_reconciliation,
         exclusions=frames["quality_issues"], assumptions=assumption_frame,
     ))
-    written.append(write_run_log(out_dir / "run_log.json", cfg, inputs.digests, Path(config_path)))
+    record(write_run_log(out_dir / "run_log.json", cfg, inputs.digests, Path(config_path)),
+           "run_log")
+
+    import json
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    written.append(out_dir / "manifest.json")
     return written
