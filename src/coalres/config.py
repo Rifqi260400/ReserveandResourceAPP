@@ -180,8 +180,11 @@ class DxfExportSettings(_Strict):
     # Nama layer. {seam} dan {surface} diisi, mis. 'Seam A Roof'.
     layer_template: str = "Seam {seam} {surface}"
     index_suffix: str = " Index"
-    # Satu berkas per seam, selain berkas gabungan.
+    # Satu berkas per seam (roof dan floor menyatu), selain berkas gabungan.
     per_seam_files: bool = True
+    # Satu berkas per PERMUKAAN: 'Seam A Roof.dxf' dan 'Seam A Floor.dxf'
+    # terpisah. Ini yang biasanya diharapkan saat memuat satu permukaan ke CAD.
+    per_surface_files: bool = True
     include_boreholes: bool = True
     include_subcrop: bool = True
     # Kontur dipotong oleh subcrop: di luar itu seam berada di atas topografi

@@ -529,6 +529,24 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                  f"({sum(v.get('polylines', 0) for v in summary.values())} polyline, "
                  f"{len(summary)} layer)")
 
+        if dxf_cfg.per_surface_files:
+            from .dxfout import surface_file_stem
+            for seam in seam_surfaces:
+                for surface_key in ("roof", "floor"):
+                    if surface_key not in seam_surfaces[seam]:
+                        continue
+                    stem = surface_file_stem(seam, surface_key, dxf_cfg.layer_template)
+                    path, _ = export_seam_contours(
+                        dxf_dir / f"{stem}.dxf", seam_surfaces,
+                        interval_m=dxf_cfg.contour_interval_m,
+                        index_every=dxf_cfg.index_every,
+                        layer_template=dxf_cfg.layer_template,
+                        index_suffix=dxf_cfg.index_suffix, subcrop_masks=masks,
+                        holes=holes_full, subcrop_lines=lines, topography=topo_surface,
+                        seam_filter=[seam], surface_filter=[surface_key],
+                    )
+                    written.append(path)
+
         if dxf_cfg.per_seam_files:
             for seam in seam_surfaces:
                 path, _ = export_seam_contours(

@@ -202,7 +202,15 @@ peta — itu benar, keduanya seam pada kedudukan stratigrafi berbeda.
 
 ### Ekspor DXF
 
-Tiap seam menghasilkan layer terpisah untuk roof dan floor, plus layer kontur
+Tiga bentuk berkas ditulis sekaligus, pilih yang sesuai alur kerja Anda:
+
+| Berkas | Isi |
+|---|---|
+| `Seam A Roof.dxf`, `Seam A Floor.dxf`, … | **satu permukaan per berkas** — untuk memuat satu permukaan ke CAD |
+| `seam_A_contours.dxf`, … | satu seam per berkas, roof dan floor menyatu |
+| `seam_contours.dxf` | semua seam, semua permukaan |
+
+Tiap berkas memuat layer terpisah untuk roof dan floor, plus layer kontur
 indeks, garis subcrop, dan titik bor:
 
 ```

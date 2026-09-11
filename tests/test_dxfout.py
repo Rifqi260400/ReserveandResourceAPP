@@ -141,3 +141,46 @@ def test_subcrop_mask_excludes_eroded_area():
     roof = plane_surface("roof", z0=20.0, slope=0.05)   # di atas topo di barat
     mask = subcrop_mask(topo, roof)
     assert mask.any() and not mask.all()
+
+
+def test_surface_filter_writes_only_one_surface(tmp_path, seams):
+    """Berkas per permukaan: 'Seam A Roof.dxf' tidak boleh memuat floor."""
+    from coalres.dxfout import surface_file_stem
+
+    stem = surface_file_stem("A", "roof", "Seam {seam} {surface}")
+    assert stem == "Seam A Roof"
+
+    path, _ = export_seam_contours(
+        tmp_path / f"{stem}.dxf", seams, interval_m=2.0, index_every=5,
+        layer_template="Seam {seam} {surface}", index_suffix=" Index",
+        seam_filter=["A"], surface_filter=["roof"],
+    )
+    msp = ezdxf.readfile(path).modelspace()
+    layers = {e.dxf.layer for e in msp}
+    assert "Seam A Roof" in layers
+    assert not any("Floor" in layer for layer in layers)
+
+
+def test_roof_and_floor_files_carry_different_elevations(tmp_path, seams):
+    """Uji agar roof dan floor tidak diam-diam menulis permukaan yang sama."""
+    elevations = {}
+    for surface_key in ("roof", "floor"):
+        path, _ = export_seam_contours(
+            tmp_path / f"{surface_key}.dxf", seams, interval_m=2.0, index_every=5,
+            layer_template="Seam {seam} {surface}", index_suffix=" Index",
+            seam_filter=["A"], surface_filter=[surface_key],
+        )
+        msp = ezdxf.readfile(path).modelspace()
+        elevations[surface_key] = [
+            float(e.dxf.elevation) for e in msp if e.dxftype() == "LWPOLYLINE"
+        ]
+    # Floor fixture 10 m di bawah roof, jadi rentangnya harus bergeser.
+    assert min(elevations["floor"]) < min(elevations["roof"])
+    assert max(elevations["floor"]) < max(elevations["roof"])
+
+
+def test_filename_sanitiser_keeps_spaces():
+    from coalres.dxfout import sanitize_filename
+
+    assert sanitize_filename("Seam A Roof") == "Seam A Roof"
+    assert sanitize_filename("Seam A/B:Roof") == "Seam A_B_Roof"

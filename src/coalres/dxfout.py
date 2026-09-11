@@ -133,8 +133,13 @@ def export_seam_contours(
     subcrop_lines: dict[str, object] | None = None,
     topography: Surface | None = None,
     seam_filter: list[str] | None = None,
+    surface_filter: list[str] | None = None,
 ) -> tuple[Path, dict]:
-    """Tulis satu DXF berisi kontur roof dan floor untuk seam yang diminta."""
+    """Tulis satu DXF berisi kontur untuk seam (dan permukaan) yang diminta.
+
+    `surface_filter` membatasi ke 'roof' saja atau 'floor' saja, dipakai untuk
+    menghasilkan berkas terpisah per permukaan.
+    """
     doc = ezdxf.new("R2010", setup=True)
     doc.header["$INSUNITS"] = 6          # meter
     msp = doc.modelspace()
@@ -145,6 +150,8 @@ def export_seam_contours(
             continue
         mask = (subcrop_masks or {}).get(seam)
         for surface_key in ("roof", "floor"):
+            if surface_filter and surface_key not in surface_filter:
+                continue
             surface = surfaces.get(surface_key)
             if surface is None:
                 continue
@@ -205,6 +212,17 @@ def export_seam_contours(
     path.parent.mkdir(parents=True, exist_ok=True)
     doc.saveas(path)
     return path, summary
+
+
+def surface_file_stem(seam: str, surface: str, template: str) -> str:
+    """Nama berkas untuk satu permukaan, mis. 'Seam A Roof'."""
+    label = {"roof": "Roof", "floor": "Floor"}.get(surface, surface.title())
+    return sanitize_filename(template.format(seam=seam, surface=label))
+
+
+def sanitize_filename(name: str) -> str:
+    """Nama berkas yang aman di semua sistem berkas, spasi dipertahankan."""
+    return re.sub(r'[<>:"/\\|?*]', "_", str(name)).strip() or "layer"
 
 
 def subcrop_mask(topo: Surface, roof: Surface) -> np.ndarray:

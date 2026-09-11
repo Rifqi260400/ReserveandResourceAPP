@@ -47,6 +47,7 @@ maps:
     include_boreholes: true
     include_subcrop: true
     clip_to_subcrop: true
+    per_surface_files: true
 estimation_method: voronoi
 block_boundary_wkt: ''
 assumed_rd_t_per_m3: null
