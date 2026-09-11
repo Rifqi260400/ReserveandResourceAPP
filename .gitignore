@@ -7,3 +7,5 @@ sample_data/workbooks/
 sample_data/las/
 sample_data/quality.csv
 sample_data/topo.dxf
+data/minex/topo.dat
+data/minex/topodig.dxf

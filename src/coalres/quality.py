@@ -226,3 +226,78 @@ def basis_report(frame: pd.DataFrame) -> pd.DataFrame:
          "n_values": int(pd.to_numeric(frame[a], errors="coerce").notna().sum())}
         for a in attributes
     ])
+
+
+def resolve_quality_from_plies(
+    intersections: list[SeamIntersection],
+    plies: pd.DataFrame,
+    cfg: Config,
+    rd_basis: str,
+    rd_column: str = "RD",
+) -> tuple[list[SeamQuality], pd.DataFrame]:
+    """Compositing kualitas dari hasil PER PLY (jalur flat file Minex).
+
+    Lebih baik daripada jalur komposit lab: interval yang diwakili tiap nilai
+    diketahui persis, sehingga cakupan dapat dihitung dan pembobotan memakai
+    MASSA (panjang x RD), bukan panjang saja. Pembobotan panjang saja bias untuk
+    seam yang RD antar-ply-nya berbeda jauh - persis kasus ply berash tinggi.
+    """
+    frame = plies.copy()
+    frame["length"] = frame["depth_to"] - frame["depth_from"]
+    # Interval terbalik tidak boleh diam-diam menjadi bobot negatif.
+    invalid = frame[frame["length"] <= 0]
+    frame = frame[frame["length"] > 0]
+
+    results: list[SeamQuality] = []
+    issues: list[dict] = []
+    for _, row in invalid.iterrows():
+        issues.append({
+            "hole_id": row["hole_id"], "seam": row["seam"],
+            "issue": "interval kualitas terbalik atau nol",
+            "detail": f"from={row['depth_from']} to={row['depth_to']}",
+        })
+
+    attributes = [c for c in frame.columns if c in AVERAGEABLE]
+    for item in intersections:
+        base_seam = item.split_from or item.seam
+        matched = frame[(frame["hole_id"] == item.hole_id)
+                        & (frame["seam"].astype(str).str.strip() == base_seam)]
+        if matched.empty:
+            issues.append({"hole_id": item.hole_id, "seam": item.seam,
+                           "issue": "tidak ada hasil kualitas", "detail": ""})
+            continue
+
+        length = matched["length"].to_numpy(float)
+        density = pd.to_numeric(matched.get(rd_column), errors="coerce").to_numpy(float)
+        mass = length * np.where(np.isfinite(density), density, 1.0)
+
+        values: dict[str, float] = {}
+        for attribute in attributes:
+            series = pd.to_numeric(matched[attribute], errors="coerce").to_numpy(float)
+            ok = np.isfinite(series) & np.isfinite(mass) & (mass > 0)
+            if ok.any():
+                values[attribute] = float(np.average(series[ok], weights=mass[ok]))
+
+        # RD dibobot VOLUME (panjang), bukan massa: membobot densitas dengan
+        # massa yang dihitung dari densitas itu sendiri akan melebihkan ply padat.
+        rd_ok = np.isfinite(density) & (length > 0)
+        rd_value = float(np.average(density[rd_ok], weights=length[rd_ok])) if rd_ok.any() else np.nan
+
+        covered = float(length.sum())
+        fraction = covered / item.coal_thickness_m if item.coal_thickness_m > 0 else np.nan
+        if np.isfinite(fraction) and fraction < cfg.cutoffs.min_quality_coverage_frac:
+            issues.append({
+                "hole_id": item.hole_id, "seam": item.seam,
+                "issue": "cakupan kualitas di bawah ambang",
+                "detail": f"{covered:.3f} m dari {item.coal_thickness_m:.3f} m ({fraction:.1%})",
+            })
+
+        results.append(SeamQuality(
+            hole_id=item.hole_id, seam=item.seam, values=values,
+            n_samples=len(matched),
+            covered_from_m=float(matched["depth_from"].min()),
+            covered_to_m=float(matched["depth_to"].max()),
+            covered_m=covered, coverage_frac=fraction,
+            rd_t_per_m3=rd_value, rd_basis=rd_basis,
+        ))
+    return results, pd.DataFrame(issues)

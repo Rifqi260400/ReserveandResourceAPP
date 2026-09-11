@@ -269,3 +269,52 @@ def assumptions(cfg: Config) -> list[str]:
         "Core loss di luar amplop seam selalu dihitung waste, apa pun setelan di atas."
     )
     return notes
+
+
+def build_intersections_from_dataset(dataset, cfg: Config) -> list[SeamIntersection]:
+    """Interseksi seam dari HoleDataset (jalur flat file Minex).
+
+    Berbeda dari jalur workbook BGG: berkas `lit` Minex mencantumkan interval
+    SEAM, bukan seluruh kolom litologi. Jadi tidak ada parting maupun core loss
+    untuk dikurangkan - tebal batubara adalah to - from. Menerapkan logika
+    parting BGG di sini akan mengurangi tebal berdasarkan interval yang memang
+    tidak pernah dicatat.
+
+    Baris penanda (mis. 'W') berketebalan nol; ia menandai horizon, bukan seam,
+    dan dikeluarkan di sini.
+    """
+    intervals = dataset.intervals
+    if intervals.empty:
+        return []
+
+    marker = intervals["is_marker"] if "is_marker" in intervals else False
+    body = intervals[~np.asarray(marker, dtype=bool)].copy()
+    body = body[np.isfinite(body["depth_from"]) & np.isfinite(body["depth_to"])]
+
+    min_seam = cfg.cutoffs.min_seam_thickness_m
+    results: list[SeamIntersection] = []
+    for (hole, seam), group in body.groupby(["hole_id", "seam"], sort=False):
+        roof = float(group["depth_from"].min())
+        floor = float(group["depth_to"].max())
+        # Beberapa baris untuk satu seam diperlakukan sebagai ply: tebal
+        # batubara adalah jumlah panjangnya, bukan amplop roof-floor.
+        coal = float((group["depth_to"] - group["depth_from"]).clip(lower=0).sum())
+        gross = floor - roof
+        results.append(SeamIntersection(
+            hole_id=str(hole), seam=str(seam), roof_m=roof, floor_m=floor,
+            gross_thickness_m=gross, coal_thickness_m=coal,
+            parting_thickness_m=max(gross - coal, 0.0),
+            core_loss_thickness_m=0.0, core_loss_in_coal_m=0.0,
+            n_intervals=len(group), max_parting_m=max(gross - coal, 0.0),
+            thickness_source="lithology_interval",
+            core_loss_treatment="n/a (tidak dicatat di berkas lit)",
+        ))
+
+    kept = []
+    for item in results:
+        if item.coal_thickness_m < min_seam:
+            log.info(f"{item.hole_id}/{item.seam}: tebal {item.coal_thickness_m:.3f} m "
+                     f"di bawah cutoff {min_seam} m - dikeluarkan")
+            continue
+        kept.append(item)
+    return kept

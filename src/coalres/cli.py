@@ -59,9 +59,17 @@ def _gather(cfg: Config):
 
 def cmd_audit(args) -> int:
     cfg = Config.load(args.config)
-    workbooks, las_files, quality, topo, digests = _gather(cfg)
-    report = run_audit(workbooks, las_files, quality, topo, cfg)
+    if cfg.input_format == "minex_flat":
+        from .audit.minex_checks import run_minex_audit
+        from .pipeline import gather_minex
 
+        dataset, inputs = gather_minex(cfg)
+        report = run_minex_audit(dataset, cfg)
+        digests = inputs.digests
+        workbooks, las_files = [], {}
+    else:
+        workbooks, las_files, quality, topo, digests = _gather(cfg)
+        report = run_audit(workbooks, las_files, quality, topo, cfg)
     text = render_report(report, cfg, workbooks, las_files)
     print(text)
 
@@ -81,10 +89,20 @@ def cmd_run(args) -> int:
     from .rpeee import label_warning
 
     cfg = Config.load(args.config)
-    workbooks, las_files, quality, topo, _ = _gather(cfg)
-    report = run_audit(workbooks, las_files, quality, topo, cfg)
+    if cfg.input_format == "minex_flat":
+        from .audit.minex_checks import run_minex_audit
+        from .pipeline import gather_minex
+
+        dataset, inputs = gather_minex(cfg)
+        report = run_minex_audit(dataset, cfg)
+        rendered = render_report(report, cfg, [], {})
+    else:
+        workbooks, las_files, quality, topo, _ = _gather(cfg)
+        report = run_audit(workbooks, las_files, quality, topo, cfg)
+        rendered = render_report(report, cfg, workbooks, las_files)
+        inputs = None
     if not report.passed:
-        print(render_report(report, cfg, workbooks, las_files))
+        print(rendered)
         log.critical(
             f"Phase 0 tidak lulus: {len(report.stops)} gerbang terbuka. "
             "Estimasi tidak dijalankan."
@@ -96,7 +114,8 @@ def cmd_run(args) -> int:
         log.warning(warning)
 
     results = run(args.config, verbose=not args.quiet)
-    inputs = gather(cfg)
+    if inputs is None:
+        inputs = gather(cfg)
     written = write_outputs(results, inputs, Path(args.config))
 
     label = cfg.rpeee_constraints.resource_label

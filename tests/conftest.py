@@ -46,6 +46,8 @@ def base_config_dict(tmp_path, workbook_dir) -> dict:
             "min_seam_thickness_m": 0.4, "max_parting_thickness_m": 0.3,
             "min_core_recovery_pct": 90, "min_quality_coverage_frac": 0.9,
         },
+        "validation": {"collar_vs_topo_tolerance_m": 2.0,
+                       "mass_balance_tolerance_pct": 0.5},
         "rpeee_constraints": {
             "max_depth_m": None, "max_depth_basis": "", "min_cv_ar_kcal_kg": None,
             "max_ash_adb_pct": None, "excluded_area_wkt": "", "excluded_area_basis": "",

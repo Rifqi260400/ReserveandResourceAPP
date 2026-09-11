@@ -1,0 +1,76 @@
+# Dataset flat file Minex. Nama kolom di bawah adalah DEKLARASI - berkasnya
+# tidak berheader, jadi urutan yang salah tidak akan memunculkan kesalahan.
+paths:
+  workbook_dir: data/minex          # tidak dipakai pada jalur minex_flat
+  las_dir: null
+  quality_table: null
+  topography_dxf: null
+  output_dir: output/minex
+
+input_format: minex_flat
+
+minex:
+  survey_file: data/minex/surv.txt
+  lithology_file: data/minex/lit.txt
+  quality_file: data/minex/qual.txt
+  topography_file: data/minex/topo.dat
+  faults_file: data/minex/faults01.dat
+
+  survey_columns:    [hole_id, east, north, rl, total_depth]
+  lithology_columns: [hole_id, seam, depth_from, depth_to, code]
+  quality_columns:   [hole_id, seam, depth_from, depth_to, RD, M_adb, ASH_adb, VM_adb, FC_adb, TS_adb, CV_adb]
+  fault_columns:     [name, east, north, z, f5, f6, f7, f8, f9, f10]
+
+  marker_seams: [W]
+  quality_rd_basis: in_situ        # DEKLARASI SEMENTARA untuk uji jalan - WAJIB dikonfirmasi
+  on_invalid_quality_interval: exclude
+
+authoritative_coordinate_source: collar_ts
+coal_thickness_source: lithology
+core_loss_treatment: as_coal
+
+# Muda -> tua. Seam A terpecah menjadi A1 dan A2 di sebagian area.
+stratigraphy: [A, B]
+seam_splits:
+  A: [A1, A2]
+
+geological_condition: moderat
+geological_condition_justification: >-
+  PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan dataset dummy
+  dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
+  menerus di 59 dari 60 lubang, seam A terpecah menjadi A1 dan A2 pada sebagian
+  area, dan terdapat satu jejak sesar (faults01). Penilaian sebenarnya wajib
+  menguraikan kontinuitas seam antar lubang, throw dan rapat sesar, variasi
+  ketebalan lateral, serta besaran dan keseragaman dip, dengan bukti penampang.
+
+classification_radii_m:
+  sederhana: {measured: 500, indicated: 1000, inferred: 1500}
+  moderat:   {measured: 250, indicated: 500,  inferred: 1000}
+  kompleks:  {measured: 100, indicated: 200,  inferred: 400}
+
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.3
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+
+validation:
+  collar_vs_topo_tolerance_m: 2.0
+  mass_balance_tolerance_pct: 0.5
+
+rpeee_constraints:
+  max_depth_m: null
+  max_depth_basis: ""
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ""
+  excluded_area_basis: ""
+
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true
+
+estimation_method: voronoi
+block_boundary_wkt: ""
+assumed_rd_t_per_m3: 1.32        # ASUMSI untuk lubang tanpa kualitas - dicap di setiap tabel

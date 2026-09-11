@@ -153,6 +153,40 @@ scripts/make_synthetic_dataset.py   dataset uji dalam format workbook BGG
 tests/                     85 tes
 ```
 
+## Dua format masukan
+
+`input_format` memilih pembaca:
+
+| Format | Berkas | Catatan |
+|---|---|---|
+| `bgg_workbook` | satu `.xlsx` per lubang + LAS + CSV kualitas + DXF | header merged bertingkat, diresolusi otomatis |
+| `minex_flat` | `surv` · `lit` · `qual` · `faults` · `topo` | **tidak berheader** — arti kolom dideklarasikan di konfigurasi |
+
+Berkas Minex tidak berheader, jadi urutan kolom yang salah **tidak memunculkan
+kesalahan apa pun** — tebal dan kualitas tetap terbaca sebagai angka yang wajar.
+Karena itu `minex.*_columns` dan `minex.quality_rd_basis` adalah gerbang audit,
+dan tabel deklarasi kolom dicetak untuk dikonfirmasi manusia.
+
+Berkas `lit` Minex memuat interval **seam**, bukan seluruh kolom litologi — jadi
+tidak ada parting atau core loss untuk dikurangkan, dan logika parting jalur BGG
+tidak diterapkan di sini.
+
+## Hitung ganda seam terpecah
+
+Seam induk dan anaknya (`seam_splits: {A: [A1, A2]}`) adalah batubara yang **sama**
+yang direpresentasikan berbeda di lubang berbeda. Membentuk tesselasi Voronoi
+terpisah untuk masing-masing membuat domainnya bertindih.
+
+Pada dataset dummy, kesalahan itu bernilai **26,9% — 13,4 dari 49,9 juta ton** —
+dan tidak memunculkan gejala apa pun di peta maupun tabel.
+
+Perbaikannya di akar: **satu tesselasi atas gabungan seluruh lubang dalam satu
+satuan stratigrafi**. Tiap sel dimiliki tepat satu lubang, dan lubang itu
+menyumbang representasi yang memang ia punya. Tumpang tindih menjadi mustahil
+menurut konstruksi. Anak yang bertumpuk (A1 di atas A2) tetap bertindih dalam
+peta — itu benar, keduanya seam pada kedudukan stratigrafi berbeda.
+`plan_overlap_report()` ikut terbit di setiap run sebagai jaring pengaman.
+
 ## Deliverable
 
 | # | Keluaran | Isi |

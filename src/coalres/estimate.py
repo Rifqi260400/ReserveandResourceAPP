@@ -276,3 +276,103 @@ def rd_sensitivity(polygons: list[ResourcePolygon], deltas=(-0.10, -0.05, 0.0, 0
          "difference_tonnes": base * d}
         for d in deltas
     ])
+
+
+def build_polygons_for_unit(
+    unit_name: str,
+    seam_points: dict[str, list[HolePoint]],
+    cfg: Config,
+    method: str | None = None,
+) -> list[ResourcePolygon]:
+    """Bentuk poligon untuk satu SATUAN STRATIGRAFI yang mungkin terpecah.
+
+    Seam induk dan anak-anaknya (mis. A dengan A1 dan A2) adalah batubara yang
+    SAMA yang direpresentasikan berbeda di lubang berbeda. Membentuk tesselasi
+    Voronoi terpisah untuk masing-masing membuat domainnya saling tumpang
+    tindih, dan tonasenya terhitung dua kali. Pada dataset dummy ini kesalahan
+    itu bernilai 26,9% - 13,4 dari 49,9 juta ton - dan tidak memunculkan gejala
+    apa pun di peta maupun tabel.
+
+    Perbaikannya di akar: SATU tesselasi atas gabungan seluruh lubang dalam
+    satuan ini. Tiap sel lalu dimiliki tepat satu lubang, dan lubang itu
+    menyumbang representasi yang memang ia punya - A saja, atau A1 dan A2.
+    Tumpang tindih menjadi mustahil menurut konstruksi.
+
+    Anak-anak yang bertumpuk (A1 di atas A2) TETAP tumpang tindih dalam peta,
+    dan itu benar: keduanya seam berbeda pada kedudukan stratigrafi berbeda.
+    """
+    method = method or cfg.estimation_method
+    radii = cfg.radii
+
+    by_hole: dict[str, HolePoint] = {}
+    for points in seam_points.values():
+        for point in points:
+            by_hole.setdefault(point.hole_id, point)
+    union_points = list(by_hole.values())
+
+    if method == "circular":
+        # Metode sirkular sudah menyelesaikan tumpang tindih lewat kelas
+        # tertinggi; cukup jalankan per seam atas tesselasi gabungan.
+        out: list[ResourcePolygon] = []
+        for seam, points in seam_points.items():
+            out.extend(_circular_polygons(seam, points, radii))
+        return out
+
+    cells = voronoi_cells(union_points)
+    out = []
+    for seam, points in seam_points.items():
+        for point in points:
+            cell = cells.get(point.hole_id)
+            if cell is None:
+                continue
+            for band in bands(radii):
+                piece = _make(seam, point, band.resource_class,
+                              cell.intersection(band.geometry(point.east, point.north)))
+                if piece is not None:
+                    out.append(piece)
+    return out
+
+
+# Ambang luas tumpang tindih yang dianggap nol. Irisan poligon yang bersentuhan
+# tepi menghasilkan sisa orde 1e-16 m2; melaporkannya sebagai temuan hanya
+# menenggelamkan temuan yang sebenarnya.
+OVERLAP_TOLERANCE_M2 = 1.0
+
+
+def plan_overlap_report(polygons: list[ResourcePolygon], cfg: Config) -> pd.DataFrame:
+    """Tumpang tindih dalam peta antara seam induk dan anaknya.
+
+    Seam bertumpuk yang berbeda kedudukan stratigrafi memang bertindihan dalam
+    peta - itu bukan kesalahan. Yang diperiksa di sini hanya pasangan induk-anak,
+    yang merupakan representasi batubara yang sama.
+    """
+    from shapely.ops import unary_union
+
+    domains: dict[str, list] = {}
+    tonnes: dict[str, float] = {}
+    for polygon in polygons:
+        domains.setdefault(polygon.seam, []).append(polygon.geometry)
+        tonnes[polygon.seam] = tonnes.get(polygon.seam, 0.0) + polygon.tonnes
+    merged = {seam: unary_union(geoms) for seam, geoms in domains.items()}
+
+    rows = []
+    for parent, children in cfg.seam_splits.items():
+        if parent not in merged:
+            continue
+        for child in children:
+            if child not in merged:
+                continue
+            overlap = merged[parent].intersection(merged[child])
+            if overlap.area <= OVERLAP_TOLERANCE_M2:
+                continue
+            share = sum(
+                p.tonnes * (p.geometry.intersection(merged[child]).area / p.geometry.area)
+                for p in polygons if p.seam == parent and p.geometry.area > 0
+            )
+            rows.append({
+                "seam_induk": parent, "seam_anak": child,
+                "tumpang_tindih_ha": overlap.area / 10_000.0,
+                "persen_domain_induk": 100.0 * overlap.area / merged[parent].area,
+                "tonase_terhitung_ganda": share,
+            })
+    return pd.DataFrame(rows)

@@ -21,6 +21,7 @@ ThicknessSource = Literal["lithology", "sampling"]
 CoreLossTreatment = Literal["as_coal", "as_waste", "exclude"]
 RDBasis = Literal["in_situ", "air_dried", "as_received", "unknown"]
 EstimationMethod = Literal["voronoi", "circular"]
+InputFormat = Literal["bgg_workbook", "minex_flat"]
 
 JUSTIFICATION_MIN_CHARS = 100
 
@@ -114,6 +115,52 @@ class RpeeeConstraints(_Strict):
         return "Sumberdaya" if self.has_economic_constraint else "Inventori"
 
 
+class MinexSpec(_Strict):
+    """Berkas flat Minex dan arti kolomnya.
+
+    Berkas ini tidak berheader, jadi arti kolom WAJIB dinyatakan di sini. Salah
+    urut kolom tidak akan memunculkan kesalahan apa pun - tebal dan kualitas
+    tetap terbaca sebagai angka yang wajar.
+    """
+
+    survey_file: Path
+    lithology_file: Path
+    quality_file: Path | None = None
+    topography_file: Path | None = None
+    faults_file: Path | None = None
+
+    survey_columns: list[str]
+    lithology_columns: list[str]
+    quality_columns: list[str] = Field(default_factory=list)
+    fault_columns: list[str] = Field(default_factory=list)
+
+    # Baris berketebalan nol yang menandai horizon, bukan seam (mis. 'W').
+    marker_seams: list[str] = Field(default_factory=list)
+
+    # Basis RD dinyatakan di sini karena berkasnya tidak berheader. Ia tidak
+    # boleh disimpulkan dari nilainya.
+    quality_rd_basis: RDBasis = "unknown"
+
+    # Interval kualitas terbalik (to <= from) adalah cacat data. Perbaikannya
+    # bukan urusan kode - menukar from dan to akan menebak niat penulisnya.
+    #   stop    : hentikan run (bawaan)
+    #   exclude : keluarkan baris itu dan catat, sisanya tetap diproses
+    on_invalid_quality_interval: Literal["stop", "exclude"] = "stop"
+
+    @model_validator(mode="after")
+    def _quality_needs_columns(self) -> "MinexSpec":
+        if self.quality_file is not None and not self.quality_columns:
+            raise ValueError("quality_file diisi tetapi quality_columns kosong.")
+        if self.faults_file is not None and not self.fault_columns:
+            raise ValueError("faults_file diisi tetapi fault_columns kosong.")
+        return self
+
+
+class ValidationSettings(_Strict):
+    collar_vs_topo_tolerance_m: float = Field(gt=0)
+    mass_balance_tolerance_pct: float = Field(gt=0)
+
+
 class MapSettings(_Strict):
     """Parameter penyajian peta kontur struktur."""
 
@@ -132,6 +179,8 @@ class Paths(_Strict):
 
 class Config(_Strict):
     paths: Paths
+    input_format: InputFormat = "bgg_workbook"
+    minex: MinexSpec | None = None
 
     authoritative_coordinate_source: CoordinateSource
     coal_thickness_source: ThicknessSource
@@ -140,8 +189,15 @@ class Config(_Strict):
     geological_condition: GeologicalCondition
     geological_condition_justification: str
 
+    # Urutan stratigrafi dari MUDA (atas) ke TUA (bawah).
+    stratigraphy: list[str] = Field(default_factory=list)
+    # Seam induk yang terpecah menjadi beberapa anak, mis. {"A": ["A1", "A2"]}.
+    # Anak mewarisi kedudukan stratigrafi induknya dan diurutkan sesuai daftar.
+    seam_splits: dict[str, list[str]] = Field(default_factory=dict)
+
     classification_radii_m: RadiiTable
     cutoffs: Cutoffs
+    validation: ValidationSettings
     rpeee_constraints: RpeeeConstraints
 
     maps: MapSettings
@@ -167,6 +223,27 @@ class Config(_Strict):
                 "sesar, variasi ketebalan, dan dip."
             )
         return text
+
+    @model_validator(mode="after")
+    def _minex_spec_required(self) -> "Config":
+        if self.input_format == "minex_flat" and self.minex is None:
+            raise ValueError("input_format='minex_flat' menuntut blok 'minex'.")
+        return self
+
+    def stratigraphic_rank(self) -> dict[str, tuple[int, int]]:
+        """Peringkat (induk, anak) tiap seam. Peringkat kecil = lebih muda."""
+        rank: dict[str, tuple[int, int]] = {}
+        for index, parent in enumerate(self.stratigraphy):
+            rank[parent] = (index, 0)
+            for child_index, child in enumerate(self.seam_splits.get(parent, [])):
+                rank[child] = (index, child_index)
+        return rank
+
+    def parent_seam(self, seam: str) -> str:
+        for parent, children in self.seam_splits.items():
+            if seam in children:
+                return parent
+        return seam
 
     @property
     def radii(self) -> ClassificationRadii:

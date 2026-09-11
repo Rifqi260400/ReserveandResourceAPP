@@ -11,7 +11,10 @@ from .audit.checks import AuditReport, run_audit
 from .config import Config, file_digest
 from .density import resolve_in_situ_rd
 from .errors import MissingDataError
-from .estimate import HolePoint, ResourcePolygon, build_polygons, rd_sensitivity, to_frame
+from .estimate import (
+    HolePoint, ResourcePolygon, build_polygons, build_polygons_for_unit,
+    plan_overlap_report, rd_sensitivity, to_frame,
+)
 from .io.dxf import load_topography
 from .io.excel import Workbook, load_workbook, normalise_hole_id
 from .io.las import load_las
@@ -24,7 +27,11 @@ from .report import (
     write_run_log, write_vectors,
 )
 from .rpeee import apply_constraints, label_warning, reconciliation_table
-from .seams import SeamIntersection, assumptions, build_intersections, to_frame as seams_frame
+from .io.minex import HoleDataset, load_minex
+from .seams import (
+    SeamIntersection, assumptions, build_intersections,
+    build_intersections_from_dataset, to_frame as seams_frame,
+)
 from .topo import Surface, build_surface, depth_limit_extent, difference, subcrop_extent
 
 log = get_logger("pipeline")
@@ -54,6 +61,93 @@ class Results:
     frames: dict[str, pd.DataFrame]
     surfaces: dict[str, dict[str, Surface]]
     outputs: list[Path] = field(default_factory=list)
+
+
+def gather_minex(cfg: Config) -> tuple[HoleDataset, Inputs]:
+    """Muat berkas flat Minex dan bungkus sebagai Inputs untuk hilirnya."""
+    dataset = load_minex(cfg)
+    digests: dict[str, str] = {}
+    spec = cfg.minex
+    for path in (spec.survey_file, spec.lithology_file, spec.quality_file,
+                 spec.topography_file, spec.faults_file):
+        if path is not None and Path(path).exists():
+            digests[Path(path).name] = file_digest(Path(path))
+
+    class _TopoShim:
+        points = dataset.topo_points
+
+    inputs = Inputs(workbooks=[], las_files={}, quality=None,
+                    topo_points=_TopoShim() if dataset.topo_points is not None else None,
+                    digests=digests)
+    return dataset, inputs
+
+
+def build_hole_points_minex(
+    dataset: HoleDataset, cfg: Config
+) -> tuple[dict[str, list[HolePoint]], pd.DataFrame, pd.DataFrame, list[str]]:
+    """Titik per seam dari HoleDataset."""
+    from .quality import resolve_quality_from_plies
+
+    intersections = build_intersections_from_dataset(dataset, cfg)
+    quality_by_key: dict[tuple[str, str], object] = {}
+    issues = pd.DataFrame()
+    if dataset.quality is not None:
+        resolved, issues = resolve_quality_from_plies(
+            intersections, dataset.quality, cfg, cfg.minex.quality_rd_basis
+        )
+        quality_by_key = {(q.hole_id, q.seam): q for q in resolved}
+
+    collars = dataset.collars.set_index("hole_id")
+    points: dict[str, list[HolePoint]] = {}
+    rows, rd_notes, excluded = [], [], []
+
+    for item in intersections:
+        if item.hole_id not in collars.index:
+            continue
+        collar = collars.loc[item.hole_id]
+        east, north, rl = float(collar["east"]), float(collar["north"]), float(collar["rl"])
+        q = quality_by_key.get(item.key)
+        try:
+            rd, assumed, note = resolve_in_situ_rd(
+                rd_value=q.rd_t_per_m3 if q else None,
+                rd_basis=q.rd_basis if q else "unknown",
+                total_moisture_ar_pct=(q.values.get("TM_ar") if q else None),
+                inherent_moisture_adb_pct=(q.values.get("M_adb") if q else None),
+                assumed_rd_t_per_m3=cfg.assumed_rd_t_per_m3,
+            )
+        except MissingDataError as exc:
+            excluded.append({"hole_id": item.hole_id, "seam": item.seam, "alasan": str(exc)})
+            continue
+
+        rd_notes.append(f"{item.hole_id}/{item.seam}: {note}")
+        values = dict(q.values) if q else {}
+        points.setdefault(item.seam, []).append(HolePoint(
+            hole_id=item.hole_id, east=east, north=north,
+            coal_thickness_m=item.coal_thickness_m, rd_t_per_m3=rd,
+            rd_basis=q.rd_basis if q else "unknown", rd_is_assumed=assumed,
+            quality_coverage_frac=q.coverage_frac if q else float("nan"),
+            quality=values,
+        ))
+        rows.append({
+            "hole_id": item.hole_id, "seam": item.seam, "east": east, "north": north,
+            "collar_rl_m": rl, "roof_m": item.roof_m, "floor_m": item.floor_m,
+            "roof_rl_m": rl - item.roof_m, "floor_rl_m": rl - item.floor_m,
+            "gross_thickness_m": item.gross_thickness_m,
+            "coal_thickness_m": item.coal_thickness_m,
+            "parting_thickness_m": item.parting_thickness_m,
+            "core_loss_counted_as_coal_m": 0.0,
+            "rd_t_per_m3": rd, "rd_basis": q.rd_basis if q else "unknown",
+            "rd_is_assumed": assumed,
+            "quality_coverage_frac": q.coverage_frac if q else float("nan"),
+            "n_quality_samples": q.n_samples if q else 0,
+            "quality_covered_interval": q.covered_interval if q else "tidak ada hasil",
+            **values,
+        })
+
+    if excluded:
+        extra = pd.DataFrame(excluded)
+        issues = pd.concat([issues, extra], ignore_index=True) if not issues.empty else extra
+    return points, pd.DataFrame(rows), issues, rd_notes
 
 
 def gather(cfg: Config) -> Inputs:
@@ -188,6 +282,13 @@ def build_surfaces(
     )
 
     surfaces: dict[str, dict[str, Surface]] = {}
+    if intercepts.empty or "seam" not in intercepts.columns:
+        raise MissingDataError(
+            "tidak ada satu pun interseksi seam yang lolos ke tahap estimasi. "
+            "Penyebab paling lazim: RD tidak dapat diselesaikan untuk seluruh "
+            "seam (lihat sheet pengecualian). Isi assumed_rd_t_per_m3, atau "
+            "lengkapi kolom moisture yang dibutuhkan konversi basis RD."
+        )
     for seam, group in intercepts.groupby("seam", sort=False):
         if len(group) < 3:
             log.warning(f"seam {seam}: {len(group)} lubang, permukaan tidak dibangun")
@@ -228,24 +329,45 @@ def run(config_path: str | Path, verbose: bool = True) -> Results:
     if warning:
         log.warning(warning)
 
-    inputs = gather(cfg)
-    audit = run_audit(inputs.workbooks, inputs.las_files, inputs.quality,
-                      inputs.topo_points, cfg)
+    if cfg.input_format == "minex_flat":
+        from .audit.minex_checks import run_minex_audit
+        dataset, inputs = gather_minex(cfg)
+        audit = run_minex_audit(dataset, cfg)
+    else:
+        dataset = None
+        inputs = gather(cfg)
+        audit = run_audit(inputs.workbooks, inputs.las_files, inputs.quality,
+                          inputs.topo_points, cfg)
     if not audit.passed:
         raise MissingDataError(
             f"Phase 0 tidak lulus: {len(audit.stops)} gerbang terbuka. "
             "Jalankan `coalres audit` untuk rinciannya."
         )
 
-    points, intercepts, quality_issues, rd_notes = build_hole_points(inputs, cfg)
+    if dataset is not None:
+        points, intercepts, quality_issues, rd_notes = build_hole_points_minex(dataset, cfg)
+    else:
+        points, intercepts, quality_issues, rd_notes = build_hole_points(inputs, cfg)
     topo, surfaces = build_surfaces(inputs, intercepts, cfg)
 
-    polygons: list[ResourcePolygon] = []
+    # Seam dikelompokkan menurut SATUAN STRATIGRAFI: seam induk dan anaknya
+    # dibentuk atas satu tesselasi gabungan, sehingga domainnya tidak dapat
+    # saling tumpang tindih. Lihat estimate.build_polygons_for_unit.
+    units: dict[str, dict[str, list[HolePoint]]] = {}
     for seam, seam_points in points.items():
+        units.setdefault(cfg.parent_seam(seam), {})[seam] = seam_points
+
+    polygons: list[ResourcePolygon] = []
+    for unit, members in units.items():
         try:
-            polygons.extend(build_polygons(seam, seam_points, cfg))
+            if len(members) == 1 and unit in members:
+                polygons.extend(build_polygons(unit, members[unit], cfg))
+            else:
+                log.info(f"satuan '{unit}': {sorted(members)} dibentuk atas satu "
+                         "tesselasi gabungan untuk mencegah hitung ganda")
+                polygons.extend(build_polygons_for_unit(unit, members, cfg))
         except MissingDataError as exc:
-            log.warning(f"seam {seam} dilewati: {exc}")
+            log.warning(f"satuan {unit} dilewati: {exc}")
 
     polygons, steps = apply_constraints(polygons, surfaces, cfg)
 
@@ -262,6 +384,7 @@ def run(config_path: str | Path, verbose: bool = True) -> Results:
         "basis": basis_report(frame) if not frame.empty else pd.DataFrame(),
         "audit": audit.to_frame(),
         "rd_notes": pd.DataFrame({"catatan konversi RD": rd_notes}),
+        "plan_overlap": plan_overlap_report(polygons, cfg),
     }
     return Results(config=cfg, audit=audit, polygons=polygons, frames=frames,
                    surfaces={"topo": {"topo": topo}, **surfaces})
