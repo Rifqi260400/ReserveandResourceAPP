@@ -171,12 +171,31 @@ class ValidationSettings(_Strict):
     mass_balance_tolerance_pct: float = Field(gt=0)
 
 
+class DxfExportSettings(_Strict):
+    """Ekspor kontur struktur seam ke DXF."""
+
+    enabled: bool = True
+    contour_interval_m: float = Field(default=2.0, gt=0)
+    index_every: int = Field(default=5, ge=1)
+    # Nama layer. {seam} dan {surface} diisi, mis. 'Seam A Roof'.
+    layer_template: str = "Seam {seam} {surface}"
+    index_suffix: str = " Index"
+    # Satu berkas per seam, selain berkas gabungan.
+    per_seam_files: bool = True
+    include_boreholes: bool = True
+    include_subcrop: bool = True
+    # Kontur dipotong oleh subcrop: di luar itu seam berada di atas topografi
+    # dan batubaranya sudah tererosi.
+    clip_to_subcrop: bool = True
+
+
 class MapSettings(_Strict):
     """Parameter penyajian peta kontur struktur."""
 
     contour_interval_m: float = Field(gt=0)
     index_contour_every: int = Field(ge=1)
     label_contours: bool = True
+    dxf_export: DxfExportSettings = Field(default_factory=DxfExportSettings)
 
 
 class Paths(_Strict):

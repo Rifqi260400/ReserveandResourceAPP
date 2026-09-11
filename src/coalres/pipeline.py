@@ -497,6 +497,50 @@ def write_outputs(results: Results, inputs: Inputs, config_path: Path) -> list[P
                                     maps_dir / f"{seam}_klasifikasi.png",
                                     holes=holes, overlays=overlays))
 
+    # --- Ekspor kontur DXF --------------------------------------------------- #
+    dxf_cfg = cfg.maps.dxf_export
+    if dxf_cfg.enabled:
+        from .dxfout import export_seam_contours, subcrop_mask
+
+        topo_surface = results.surfaces["topo"]["topo"]
+        seam_surfaces = {k: v for k, v in results.surfaces.items() if k != "topo"}
+        masks, lines = {}, {}
+        for seam, surfaces in seam_surfaces.items():
+            if dxf_cfg.clip_to_subcrop:
+                masks[seam] = subcrop_mask(topo_surface, surfaces["roof"])
+            if dxf_cfg.include_subcrop:
+                lines[seam] = surfaces.get("subcrop")
+
+        holes_full = None
+        if dxf_cfg.include_boreholes and not frames["intercepts"].empty:
+            holes_full = (frames["intercepts"][["hole_id", "east", "north", "collar_rl_m"]]
+                          .drop_duplicates("hole_id"))
+
+        dxf_dir = out_dir / "dxf"
+        combined, summary = export_seam_contours(
+            dxf_dir / "seam_contours.dxf", seam_surfaces,
+            interval_m=dxf_cfg.contour_interval_m, index_every=dxf_cfg.index_every,
+            layer_template=dxf_cfg.layer_template, index_suffix=dxf_cfg.index_suffix,
+            subcrop_masks=masks, holes=holes_full, subcrop_lines=lines,
+            topography=topo_surface,
+        )
+        written.append(combined)
+        log.info(f"DXF gabungan: {combined.name} "
+                 f"({sum(v.get('polylines', 0) for v in summary.values())} polyline, "
+                 f"{len(summary)} layer)")
+
+        if dxf_cfg.per_seam_files:
+            for seam in seam_surfaces:
+                path, _ = export_seam_contours(
+                    dxf_dir / f"seam_{seam}_contours.dxf", seam_surfaces,
+                    interval_m=dxf_cfg.contour_interval_m, index_every=dxf_cfg.index_every,
+                    layer_template=dxf_cfg.layer_template,
+                    index_suffix=dxf_cfg.index_suffix, subcrop_masks=masks,
+                    holes=holes_full, subcrop_lines=lines, topography=topo_surface,
+                    seam_filter=[seam],
+                )
+                written.append(path)
+
     from .logs import plot_hole
     for wb in inputs.workbooks:
         key = normalise_hole_id(wb.hole_id)

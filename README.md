@@ -150,7 +150,7 @@ src/coalres/
   audit/render.py          laporan teks + Markdown
   cli.py                   coalres audit | run
 scripts/make_synthetic_dataset.py   dataset uji dalam format workbook BGG
-tests/                     85 tes
+tests/                     110 tes
 ```
 
 ## Dua format masukan
@@ -194,10 +194,41 @@ peta — itu benar, keduanya seam pada kedudukan stratigrafi berbeda.
 | 1 | `resource_estimate.xlsx` | 11 sheet: sampul berlabel, asumsi & batasan, ringkasan seam x kelas, per seam, total, kualitas terbobot, intercept per lubang, rekonsiliasi RPEEE, rekonsiliasi tebal-kualitas, sensitivitas RD, temuan audit |
 | 2 | `vector/` | GeoJSON + Shapefile poligon klasifikasi, beratribut seam, kelas, luas, tebal, RD, tonase, lubang sumber, cakupan kualitas, label |
 | 3 | `grids/` | ASCII grid + GeoTIFF per seam: roof RL, floor RL, tebal batubara, kedalaman di bawah permukaan — plus sidecar berisi metode interpolasi, spasi grid, dan sejauh mana permukaan didukung data bor |
-| 4 | `maps/` | **Peta kontur struktur roof & floor** (garis kontur berlabel + subcrop + batas blok), peta isopach kontur, peta permukaan terisi, peta klasifikasi dengan subcrop dan kontur batas kedalaman |
-| 5 | `logs/` | Plot per lubang: kurva GR dan densitas LAS di samping litologi dan pick seam |
-| 6 | `qaqc_report.md` | Temuan audit, pengecualian, justifikasi kondisi geologi verbatim, rekonsiliasi RPEEE, rekonsiliasi jumlah lubang |
-| 7 | `run_log.json` | Konfigurasi terpakai, SHA-256 setiap berkas masukan, timestamp, versi pustaka |
+| 4 | `dxf/` | **Kontur struktur roof & floor per seam ke DXF**, interval dapat diatur (bawaan 2 m), layer `Seam A Roof`, `Seam A Floor`, dst. Satu berkas gabungan + satu per seam |
+| 5 | `maps/` | **Peta kontur struktur roof & floor** (garis kontur berlabel + subcrop + batas blok), peta isopach kontur, peta permukaan terisi, peta klasifikasi dengan subcrop dan kontur batas kedalaman |
+| 6 | `logs/` | Plot per lubang: kurva GR dan densitas LAS di samping litologi dan pick seam |
+| 7 | `qaqc_report.md` | Temuan audit, pengecualian, justifikasi kondisi geologi verbatim, rekonsiliasi RPEEE, rekonsiliasi jumlah lubang |
+| 8 | `run_log.json` | Konfigurasi terpakai, SHA-256 setiap berkas masukan, timestamp, versi pustaka |
+
+### Ekspor DXF
+
+Tiap seam menghasilkan layer terpisah untuk roof dan floor, plus layer kontur
+indeks, garis subcrop, dan titik bor:
+
+```
+Seam A Roof          kontur 2 m
+Seam A Roof Index    kontur 10 m (2 m x 5), lebih tebal
+Seam A Floor
+Seam A Floor Index
+Seam A Subcrop       POLYLINE 3D, DI-DRAPE ke topografi
+Boreholes            POINT pada RL collar
+Borehole Labels      TEXT hole_id
+```
+
+Tiga hal yang menentukan kebenarannya:
+
+- **Kontur dipotong oleh subcrop.** Permukaan seam di dalam model membentang
+  sampai batas dukungan data, termasuk ke area di mana seam berada di atas
+  topografi — di sana batubaranya sudah tererosi. Mengekspor kontur di situ
+  menggambarkan seam yang tidak ada.
+- **Elevasi dibawa tiap polyline** lewat atribut `elevation`, bukan hanya
+  tersirat dari nama layer, sehingga CAD dan GIS dapat membacanya dan memberi
+  label sendiri.
+- **Subcrop di-drape ke topografi.** Ia adalah garis tempat seam memotong
+  permukaan tanah; menulisnya pada elevasi 0 membuatnya melayang di tempat yang
+  salah pada model 3D.
+
+`$INSUNITS` disetel 6 (meter).
 
 Peta kontur struktur digambar dengan `linestyles="solid"` secara eksplisit:
 matplotlib menggambar level negatif sebagai garis putus-putus secara bawaan, dan

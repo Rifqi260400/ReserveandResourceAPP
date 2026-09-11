@@ -105,6 +105,16 @@ maps:
   contour_interval_m: 5.0
   index_contour_every: 5
   label_contours: true
+  dxf_export:
+    enabled: true
+    contour_interval_m: 2.0
+    index_every: 5
+    layer_template: Seam {seam} {surface}
+    index_suffix: ' Index'
+    per_seam_files: true
+    include_boreholes: true
+    include_subcrop: true
+    clip_to_subcrop: true
 estimation_method: voronoi
 block_boundary_wkt: ''
 assumed_rd_t_per_m3: 1.3
