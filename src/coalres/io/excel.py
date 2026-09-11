@@ -124,15 +124,20 @@ def find_header_block(matrix: list[list[Any]], anchor: str) -> list[int]:
     return rows
 
 
-def find_data_start(matrix: list[list[Any]], header_rows: list[int]) -> int:
-    """Baris data pertama setelah blok header: baris pertama yang membawa angka."""
+def find_data_start(matrix: list[list[Any]], header_rows: list[int]) -> int | None:
+    """Baris data pertama setelah blok header: baris pertama yang membawa angka.
+
+    Mengembalikan None bila header ada tetapi tidak ada baris data. Ini kondisi
+    SAH, bukan kegagalan: lubang open hole tanpa coring punya sheet Sampling
+    yang berheader lengkap dan kosong isinya.
+    """
     for idx in range(header_rows[-1] + 1, len(matrix)):
         row = matrix[idx]
         if _is_separator(row):
             continue
         if _row_numerics(row) > 0:
             return idx
-    raise SchemaError("tidak ditemukan baris data di bawah blok header")
+    return None
 
 
 def find_data_start_after_header(matrix: list[list[Any]]) -> int:
@@ -244,6 +249,9 @@ def resolve_sheet(path: Path, spec: SheetSpec) -> SheetTable:
         header_rows = find_header_block(matrix, spec.anchor)
         data_start = find_data_start(matrix, header_rows)
     flattened = flatten_header(matrix, header_rows, width)
+    empty_table = data_start is None
+    if empty_table:
+        data_start = header_rows[-1] + 1
 
     canonical: dict[str, int] = {}
     for name, aliases in spec.aliases.items():
@@ -258,10 +266,10 @@ def resolve_sheet(path: Path, spec: SheetSpec) -> SheetTable:
             f"  header yang teratasi: {[f for f in flattened if f]}"
         )
 
-    body = matrix[data_start:]
+    body = [] if empty_table else matrix[data_start:]
     frame = pd.DataFrame(body, columns=range(width))
     frame = frame.rename(columns={col: name for name, col in canonical.items()})
-    frame = frame[[c for c in canonical]]
+    frame = frame.reindex(columns=[c for c in canonical])
     frame = frame.dropna(how="all").reset_index(drop=True)
 
     unmapped = [f for i, f in enumerate(flattened) if f and i not in canonical.values()]

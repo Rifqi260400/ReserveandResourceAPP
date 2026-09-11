@@ -114,6 +114,14 @@ class RpeeeConstraints(_Strict):
         return "Sumberdaya" if self.has_economic_constraint else "Inventori"
 
 
+class MapSettings(_Strict):
+    """Parameter penyajian peta kontur struktur."""
+
+    contour_interval_m: float = Field(gt=0)
+    index_contour_every: int = Field(ge=1)
+    label_contours: bool = True
+
+
 class Paths(_Strict):
     workbook_dir: Path
     las_dir: Path | None = None
@@ -136,6 +144,7 @@ class Config(_Strict):
     cutoffs: Cutoffs
     rpeee_constraints: RpeeeConstraints
 
+    maps: MapSettings
     estimation_method: EstimationMethod = "voronoi"
     block_boundary_wkt: str = ""
     assumed_rd_t_per_m3: float | None = Field(default=None, gt=0)

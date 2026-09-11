@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 output/
 .venv/
+sample_data/workbooks/
+sample_data/las/
+sample_data/quality.csv
+sample_data/topo.dxf

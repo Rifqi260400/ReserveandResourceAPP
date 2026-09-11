@@ -1,0 +1,50 @@
+paths:
+  workbook_dir: sample_data/workbooks
+  las_dir: sample_data/las
+  quality_table: sample_data/quality.csv
+  topography_dxf: sample_data/topo.dxf
+  output_dir: output/sample
+
+authoritative_coordinate_source: collar_ts
+coal_thickness_source: lithology
+core_loss_treatment: as_coal
+
+geological_condition: moderat
+geological_condition_justification: >-
+  DATASET SINTETIS - justifikasi ini ditulis untuk pengujian perangkat lunak dan
+  bukan penilaian geolog. Deposit uji dimodelkan dengan seam menerus tanpa sesar,
+  dip seragam 4 derajat, dan variasi ketebalan lateral halus. Pada data nyata,
+  bagian ini wajib menguraikan kontinuitas seam antar lubang, keberadaan dan
+  rapat sesar, variasi ketebalan lateral, serta besaran dan keseragaman dip,
+  dengan bukti dari penampang dan korelasi.
+
+classification_radii_m:
+  sederhana: {measured: 500, indicated: 1000, inferred: 1500}
+  moderat:   {measured: 250, indicated: 500,  inferred: 1000}
+  kompleks:  {measured: 100, indicated: 200,  inferred: 400}
+
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.3
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+
+rpeee_constraints:
+  max_depth_m: 100.0
+  max_depth_basis: >-
+    Batas kedalaman uji 100 m. Pada data nyata harus dinyatakan dasarnya, mis.
+    kedalaman tambang terbuka pada blok sekitar dengan geometri dan stripping
+    ratio yang sebanding.
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ""
+  excluded_area_basis: ""
+
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true
+
+estimation_method: voronoi
+block_boundary_wkt: ""
+assumed_rd_t_per_m3: 1.28

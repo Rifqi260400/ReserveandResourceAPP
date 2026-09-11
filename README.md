@@ -6,13 +6,28 @@ alternatif, diklasifikasikan menurut **SNI 5015:2019**.
 
 Referensi data: PT. Budi Gema Gempita, Blok Lawai 1, Muara Lawai, Sumatera Selatan.
 
-> **Status: Phase 0 (audit data) selesai. Modul estimasi belum dibangun.**
-> `coalres run` menolak berjalan sampai audit lulus.
+**Program lengkap.** Begitu data masuk, cukup isi konfigurasi lalu jalankan.
 
 ```bash
 pip install -r requirements.txt
+
+# 1. Audit data (gerbang keras) - selalu jalankan ini dulu
 PYTHONPATH=src python -m coalres.cli audit --config config/template.yaml
+
+# 2. Estimasi penuh - menolak berjalan sampai audit lulus
+PYTHONPATH=src python -m coalres.cli run --config config/template.yaml
 ```
+
+Mencoba tanpa data produksi:
+
+```bash
+python scripts/make_synthetic_dataset.py --holes 25 --out sample_data
+PYTHONPATH=src python -m coalres.cli run --config sample_data/config.yaml
+```
+
+Dataset sintetis ditulis dalam **format workbook BGG yang sebenarnya**, lengkap
+dengan header merged bertingkat, sehingga resolver header ikut teruji dan bukan
+dilewati.
 
 Kode keluar: `0` audit lulus · `1` konfigurasi/masukan tidak sah · `2` ada gerbang STOP.
 
@@ -121,15 +136,76 @@ src/coalres/
   io/las.py                LAS; deteksi cacah mentah vs densitas terkalibrasi
   io/dxf.py                topografi; laporan jenis entitas
   io/quality_table.py      skema tabel kualitas yang dipasok pengguna
+  seams.py                 interseksi seam, cutoff parting, perlakuan core loss
+  quality.py               cakupan komposit, rata-rata terbobot tonase per basis
+  topo.py                  permukaan TIN, subcrop, grid kedalaman
+  estimate.py              Voronoi & sirkular, pemotongan, tonase
+  classify.py              pita radius kumulatif, label kelas
+  rpeee.py                 batasan ekonomi berurutan, aturan label 8.4
+  logs.py                  plot log per lubang
+  palette.py               token warna dan gaya sumbu bersama
+  report.py                Excel, vektor, grid, peta kontur, QA/QC, run log
+  pipeline.py              orkestrasi
   audit/checks.py          11 pemeriksaan Phase 0
   audit/render.py          laporan teks + Markdown
   cli.py                   coalres audit | run
-tests/                     41 tes terhadap workbook, LAS, dan sertifikat asli
+scripts/make_synthetic_dataset.py   dataset uji dalam format workbook BGG
+tests/                     85 tes
 ```
 
-Belum dibangun: `quality`, `topo`, `estimate`, `classify`, `rpeee`, `report`.
-`seams` sudah dibangun setelah `coal_thickness_source` dan `core_loss_treatment`
-dikonfirmasi.
+## Deliverable
+
+| # | Keluaran | Isi |
+|---|---|---|
+| 1 | `resource_estimate.xlsx` | 11 sheet: sampul berlabel, asumsi & batasan, ringkasan seam x kelas, per seam, total, kualitas terbobot, intercept per lubang, rekonsiliasi RPEEE, rekonsiliasi tebal-kualitas, sensitivitas RD, temuan audit |
+| 2 | `vector/` | GeoJSON + Shapefile poligon klasifikasi, beratribut seam, kelas, luas, tebal, RD, tonase, lubang sumber, cakupan kualitas, label |
+| 3 | `grids/` | ASCII grid + GeoTIFF per seam: roof RL, floor RL, tebal batubara, kedalaman di bawah permukaan — plus sidecar berisi metode interpolasi, spasi grid, dan sejauh mana permukaan didukung data bor |
+| 4 | `maps/` | **Peta kontur struktur roof & floor** (garis kontur berlabel + subcrop + batas blok), peta isopach kontur, peta permukaan terisi, peta klasifikasi dengan subcrop dan kontur batas kedalaman |
+| 5 | `logs/` | Plot per lubang: kurva GR dan densitas LAS di samping litologi dan pick seam |
+| 6 | `qaqc_report.md` | Temuan audit, pengecualian, justifikasi kondisi geologi verbatim, rekonsiliasi RPEEE, rekonsiliasi jumlah lubang |
+| 7 | `run_log.json` | Konfigurasi terpakai, SHA-256 setiap berkas masukan, timestamp, versi pustaka |
+
+Peta kontur struktur digambar dengan `linestyles="solid"` secara eksplisit:
+matplotlib menggambar level negatif sebagai garis putus-putus secara bawaan, dan
+pada peta struktur batubara RL negatif itu lazim sementara garis putus-putus
+berarti "perkiraan". Garis subcrop dihaluskan sebesar satu sel grid — cukup
+menghilangkan gerigi rasterisasi, tidak pernah menggeser garis lebih jauh dari
+resolusi yang mendasarinya.
+
+## Aturan yang dikunci di kode dan diuji
+
+**Tonase.**
+
+```
+Tonnes = luas poligon DALAM PETA (m2) x tebal VERTIKAL (m) x RD in-situ (t/m3)
+```
+
+Tanpa koreksi cosinus dip. Luas dalam peta dikalikan tebal vertikal sudah memberi
+volume prisma yang sebenarnya: dip mengecilkan tebal tegak lurus DAN membesarkan
+luas bidang seam, dan keduanya saling meniadakan. `test_no_cosine_dip_correction_is_applied`
+menjaga agar koreksi itu tidak pernah disisipkan.
+
+**Tebal dari lubangnya sendiri.** Di bawah Voronoi, poligon adalah daerah
+pengaruh satu lubang; interpolasi tebal antar poligon bertentangan dengan asumsi
+itu. Permukaan interpolasi hanya MEMOTONG poligon (subcrop, batas kedalaman) —
+mempengaruhi luas, tidak pernah tebal.
+
+**Densitas.** Tidak pernah mengganti RD yang hilang dengan nilai bawaan.
+Pilihannya hanya konstanta dari konfigurasi (dicap sebagai asumsi di setiap
+tabel) atau seam dikeluarkan. Konversi air-dried -> in-situ memakai Preston &
+Sanders (1993), dan nilai masukan maupun hasilnya dicetak pada setiap record.
+
+**Kualitas.** Dibobot tonase, tidak pernah lintas basis analitik, jumlah sampel
+ikut di setiap angka rata-rata, dan interval yang benar-benar tercakup lab
+dilaporkan bersama nilainya.
+
+**Anti hitung-ganda.** Sel Voronoi saling eksklusif menurut konstruksi. Metode
+sirkular menyelesaikan tumpang tindih dengan memberikan kelas TERTINGGI, lalu
+mengurangi area yang sudah diklaim kelas di atasnya.
+
+**Segmentasi lingkaran.** 128 segmen. Luas poligon-n beraturan adalah
+`(n/2pi)*sin(2pi/n)` kali lingkaran sejati: bawaan shapely (16 segmen) meleset
+-2,58%, dan galat itu terbawa langsung ke tonase.
 
 ## Keputusan yang sudah dikunci
 

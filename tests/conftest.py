@@ -50,6 +50,8 @@ def base_config_dict(tmp_path, workbook_dir) -> dict:
             "max_depth_m": None, "max_depth_basis": "", "min_cv_ar_kcal_kg": None,
             "max_ash_adb_pct": None, "excluded_area_wkt": "", "excluded_area_basis": "",
         },
+        "maps": {"contour_interval_m": 5.0, "index_contour_every": 5,
+                 "label_contours": True},
         "estimation_method": "voronoi",
         "block_boundary_wkt": "",
         "assumed_rd_t_per_m3": None,

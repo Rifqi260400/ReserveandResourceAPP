@@ -42,3 +42,7 @@ rpeee_constraints:
 estimation_method: voronoi
 block_boundary_wkt: ''
 assumed_rd_t_per_m3: null
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true

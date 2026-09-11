@@ -108,3 +108,52 @@ def dry_matter_ard(ard_air_dried_t_per_m3: float, inherent_moisture_adb_pct: flo
     return (100.0 - inherent_moisture_adb_pct) / (
         100.0 / ard_air_dried_t_per_m3 - inherent_moisture_adb_pct
     )
+
+
+def resolve_in_situ_rd(
+    rd_value: float | None,
+    rd_basis: str,
+    total_moisture_ar_pct: float | None,
+    inherent_moisture_adb_pct: float | None,
+    assumed_rd_t_per_m3: float | None,
+) -> tuple[float, bool, str]:
+    """Tentukan RD in-situ untuk satu interseksi seam.
+
+    TIDAK PERNAH mengganti RD yang hilang dengan nilai bawaan. Bila tidak ada
+    hasil lab, pilihannya hanya dua dan keduanya keputusan eksplisit pengguna:
+    nilai konstan dari konfigurasi (yang lalu dicap sebagai asumsi pada setiap
+    tabel), atau seam itu dikeluarkan dari estimasi tonase.
+
+    Mengembalikan (rd, is_assumed, catatan). `catatan` menampilkan nilai masukan
+    DAN hasil konversinya, sehingga peninjau melihat koreksinya, bukan
+    menyimpulkannya.
+    """
+    if rd_value is not None and np.isfinite(rd_value):
+        if rd_basis == "in_situ":
+            return float(rd_value), False, f"RD {rd_value:.3f} t/m3 (basis in_situ, dipakai apa adanya)"
+        if rd_basis in {"air_dried", "as_received"}:
+            converted = preston_sanders_insitu_ard(
+                rd_value, total_moisture_ar_pct, inherent_moisture_adb_pct
+            )
+            return (
+                float(converted), False,
+                f"RD {rd_value:.3f} t/m3 ({rd_basis}) -> in-situ {converted:.4f} t/m3 "
+                f"(Preston & Sanders 1993; TM {total_moisture_ar_pct:.2f}%, "
+                f"M_adb {inherent_moisture_adb_pct:.2f}%)"
+            )
+        raise MissingDataError(
+            f"RD_basis '{rd_basis}' tidak dapat dikonversi. Basis harus dinyatakan "
+            "laboratorium; ia tidak boleh disimpulkan dari nilainya."
+        )
+
+    if assumed_rd_t_per_m3 is not None:
+        return (
+            float(assumed_rd_t_per_m3), True,
+            f"TIDAK ADA HASIL RD - memakai nilai asumsi {assumed_rd_t_per_m3} t/m3 "
+            "dari konfigurasi"
+        )
+    raise MissingDataError(
+        "tidak ada hasil RD dan assumed_rd_t_per_m3 tidak diisi. Pilihannya: "
+        "isi assumed_rd_t_per_m3 (dicap sebagai asumsi pada setiap keluaran), "
+        "atau keluarkan seam ini dari estimasi. Tidak ada nilai bawaan."
+    )

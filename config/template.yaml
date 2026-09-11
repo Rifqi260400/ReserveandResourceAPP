@@ -37,6 +37,11 @@ rpeee_constraints:
   excluded_area_wkt: ""
   excluded_area_basis: ""
 
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true
+
 estimation_method: voronoi     # voronoi | circular
 block_boundary_wkt: ""
 assumed_rd_t_per_m3: null      # bila diisi, dicap sebagai asumsi di setiap tabel

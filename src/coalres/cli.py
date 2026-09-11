@@ -77,6 +77,9 @@ def cmd_audit(args) -> int:
 
 
 def cmd_run(args) -> int:
+    from .pipeline import gather, run, write_outputs
+    from .rpeee import label_warning
+
     cfg = Config.load(args.config)
     workbooks, las_files, quality, topo, _ = _gather(cfg)
     report = run_audit(workbooks, las_files, quality, topo, cfg)
@@ -87,11 +90,34 @@ def cmd_run(args) -> int:
             "Estimasi tidak dijalankan."
         )
         return 2
-    log.critical(
-        "Modul estimasi belum dibangun. Sesuai urutan kerja yang disepakati, "
-        "Phase 0 diselesaikan dan dikonfirmasi lebih dulu."
-    )
-    return 3
+
+    warning = label_warning(cfg)
+    if warning:
+        log.warning(warning)
+
+    results = run(args.config, verbose=not args.quiet)
+    inputs = gather(cfg)
+    written = write_outputs(results, inputs, Path(args.config))
+
+    label = cfg.rpeee_constraints.resource_label
+    totals = results.frames["grand_total"]
+    print("\n" + "=" * 78)
+    print(f"  {label.upper()}")
+    print("=" * 78)
+    if totals.empty:
+        print("  Tidak ada poligon yang lolos seluruh batasan.")
+    else:
+        by_class = results.frames["by_seam_class"]
+        columns = [c for c in ("seam", "class", "area_ha", "coal_thickness_m",
+                               "rd_t_per_m3", "tonnes") if c in by_class]
+        print(by_class[columns].to_string(index=False, float_format=lambda v: f"{v:,.2f}"))
+        print(f"\n  TOTAL: {float(totals['tonnes'].iloc[0]):,.0f} ton "
+              f"({float(totals['area_ha'].iloc[0]):,.1f} ha)")
+    print(f"\n  {len(written)} berkas ditulis ke {cfg.paths.output_dir}")
+    if warning:
+        print()
+        log.warning(warning)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--config", required=True, type=Path)
+        p.add_argument("--quiet", action="store_true")
         p.set_defaults(handler=handler)
 
     args = parser.parse_args(argv)
