@@ -196,9 +196,23 @@ def two_direction_spread(points: np.ndarray, dip_direction: np.ndarray | None
 
 
 def evaluate_areas(points_frame: pd.DataFrame, intersections: pd.DataFrame,
-                   collars: pd.DataFrame, seam: str, radius: float
-                   ) -> pd.DataFrame:
-    """Uji KCMI 4.5.4 dan 4.5.5 pada tiap bagian poligon yang menyatu."""
+                   collars: pd.DataFrame, seam: str, radius: float,
+                   policy: str = "radius_provides_dip") -> pd.DataFrame:
+    """Uji KCMI 4.5.4 dan 4.5.5 pada tiap bagian poligon yang menyatu.
+
+    `policy` menentukan bagaimana "kemenerusan pada dua arah" dibaca:
+
+      radius_provides_dip - titik boleh berjajar searah strike. Jangkauan arah
+        dip datang dari radius kelasnya sendiri: cakram menyapu ke segala arah,
+        jadi mengklaim 250 m searah strike berarti mengklaim 250 m searah dip
+        juga. Yang tetap ditegakkan adalah minimum 3 titik (4.5.4) dan larangan
+        titik terisolasi (4.5.5). Rasio sebaran tetap DIUKUR dan dilaporkan,
+        hanya tidak lagi menggugurkan.
+
+      require_offset_point - menuntut titik fisik yang bergeser searah dip,
+        mengikuti bunyi harfiah 4.5.4: "2 titik ke searah crop line dan 1 titik
+        ke arah down dip".
+    """
     sub = points_frame[points_frame["seam"] == seam]
     coords = sub[["east", "north"]].to_numpy(float)
     holes = sub["hole_id"].tolist()
@@ -215,16 +229,18 @@ def evaluate_areas(points_frame: pd.DataFrame, intersections: pd.DataFrame,
             failures.append(
                 f"hanya {n} titik pengamatan; KCMI 4.5.4 menuntut minimum "
                 f"{MINIMUM_POO_PER_AREA} (2 searah crop line, 1 ke arah down dip)")
-        elif ratio < COLLINEARITY_RATIO:
-            failures.append(
-                f"titik praktis segaris (rentang arah kedua {secondary:.0f} m "
-                f"lawan {primary:.0f} m, rasio {ratio:.3f}); KCMI 4.5.5 menyebut "
-                "titik yang terhubung tanpa kemenerusan DUA ARAH sebagai spotted dog")
-        elif secondary < MIN_SPREAD_FRAC * radius:
-            failures.append(
-                f"rentang arah kedua {secondary:.0f} m kurang dari "
-                f"{MIN_SPREAD_FRAC:.0%} radius kelas ({radius:.0f} m); "
-                "kemenerusan arah kedua terlalu tipis untuk diandalkan")
+        elif policy == "require_offset_point":
+            if ratio < COLLINEARITY_RATIO:
+                failures.append(
+                    f"titik praktis segaris (rentang arah kedua {secondary:.0f} m "
+                    f"lawan {primary:.0f} m, rasio {ratio:.3f}); KCMI 4.5.5 menyebut "
+                    "titik yang terhubung tanpa kemenerusan DUA ARAH sebagai "
+                    "spotted dog")
+            elif secondary < MIN_SPREAD_FRAC * radius:
+                failures.append(
+                    f"rentang arah kedua {secondary:.0f} m kurang dari "
+                    f"{MIN_SPREAD_FRAC:.0%} radius kelas ({radius:.0f} m); "
+                    "kemenerusan arah kedua terlalu tipis untuk diandalkan")
 
         rows.append({
             "seam": seam, "bagian": index, "n_titik": n,
@@ -232,6 +248,7 @@ def evaluate_areas(points_frame: pd.DataFrame, intersections: pd.DataFrame,
             "rentang_arah_2_m": round(secondary, 1),
             "rasio": round(ratio, 3),
             "arah_dari": "dip/jurus" if dip is not None else "sumbu sebaran",
+            "kebijakan": policy,
             "memenuhi_kcmi": not failures,
             "temuan": "; ".join(failures),
             "lubang": ", ".join(sorted(holes[i] for i in component)),
@@ -240,8 +257,8 @@ def evaluate_areas(points_frame: pd.DataFrame, intersections: pd.DataFrame,
 
 
 def spotted_dog_report(points_frame: pd.DataFrame, intersections: pd.DataFrame,
-                       collars: pd.DataFrame, radii: dict[str, float]
-                       ) -> pd.DataFrame:
+                       collars: pd.DataFrame, radii: dict[str, float],
+                       policy: str = "radius_provides_dip") -> pd.DataFrame:
     """Uji tiap seam pada radius tiap kelas.
 
     Diuji per kelas karena spotted dog muncul pada BATAS kelas: sekumpulan titik
@@ -251,7 +268,8 @@ def spotted_dog_report(points_frame: pd.DataFrame, intersections: pd.DataFrame,
     frames = []
     for seam in sorted(points_frame["seam"].unique()):
         for klass, radius in radii.items():
-            frame = evaluate_areas(points_frame, intersections, collars, seam, radius)
+            frame = evaluate_areas(points_frame, intersections, collars, seam,
+                                   radius, policy=policy)
             if not frame.empty:
                 frame.insert(1, "kelas", klass)
                 frame.insert(2, "radius_m", radius)

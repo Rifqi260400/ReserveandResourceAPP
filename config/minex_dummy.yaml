@@ -178,6 +178,18 @@ poo:
   min_coal_recovery_pct: null
   spacing_method: otomatis
   geostatistics_min_data: 30
+  two_direction_policy: radius_provides_dip
+  two_direction_basis: 'Dinyatakan pemilik data 2026-09-12. KCMI 4.5.5 menuntut ''kemenerusan
+    pada dua arah'' tanpa memberi angka, dan 4.5.4 menyebut geometri ''2 titik searah crop
+    line, 1 titik ke arah down dip''. Pembacaan yang dipakai: titik boleh berjajar searah
+    strike, karena jangkauan arah dip datang dari RADIUS kelas itu sendiri - cakram menyapu
+    ke segala arah, sehingga klaim 250 m searah strike sama dengan klaim 250 m searah dip.
+    Didukung geometri endapan: seluruh lintasan titik pengamatan pada data ini menyimpang
+    0,2-4,1 derajat dari strike, dan dip seam seragam sekitar 9,6 derajat. TEGANGAN YANG DICATAT:
+    bunyi harfiah 4.5.4 menuntut satu titik FISIK ke arah down dip, dan pembacaan ini tidak
+    menuntut itu. Pembacaan harfiah tersedia lewat two_direction_policy=''require_offset_point'',
+    dan pada data ini ia menurunkan total yang dilaporkan dari sekitar 26 juta ton menjadi
+    8,2 juta ton.'
 limits:
   depth:
     max_depth_m: null

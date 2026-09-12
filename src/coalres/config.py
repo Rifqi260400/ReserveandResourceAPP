@@ -350,6 +350,17 @@ class PoOSpec(_Strict):
     # 4.5.2 (c) - keterwakilan sampel. None = tidak diperiksa (data tidak ada).
     min_coal_recovery_pct: float | None = Field(default=None, ge=0, le=100)
 
+    # 4.5.5 - "kemenerusan pada dua arah" tidak diberi angka oleh pedoman.
+    #   radius_provides_dip  : titik boleh berjajar searah strike; jangkauan
+    #                          arah dip datang dari RADIUS kelasnya sendiri,
+    #                          yang memang menyapu ke segala arah. Ini posisi
+    #                          pemilik data.
+    #   require_offset_point : menuntut titik fisik yang bergeser searah dip,
+    #                          mengikuti bunyi harfiah KCMI 4.5.4.
+    two_direction_policy: Literal["radius_provides_dip",
+                                  "require_offset_point"] = "radius_provides_dip"
+    two_direction_basis: str = ""
+
     # 4.5.3 - jarak antar PoO ditentukan per seam dari variabilitasnya.
     # Geostatistik disarankan bila data >= 30 (Journel & Huijbregts 1978);
     # di bawah itu, pendekatan kompleksitas geologi SNI 5015:2019 jadi cadangan.

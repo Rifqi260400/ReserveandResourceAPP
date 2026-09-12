@@ -101,19 +101,42 @@ def test_three_well_spread_points_pass():
 
 # --- 4.5.5 spotted dog ----------------------------------------------------
 
-def test_collinear_points_are_flagged_as_spotted_dog():
-    """Tiga titik segaris terhubung, tetapi hanya menerus SATU arah."""
+def _collinear_frame():
     points = np.array([[0.0, 0.0], [300.0, 10.0], [600.0, 20.0]])
-    frame = poo.evaluate_areas(
-        pd.DataFrame({"seam": ["X"] * 3, "hole_id": list("abc"),
-                      "east": points[:, 0], "north": points[:, 1]}),
-        pd.DataFrame(columns=["seam", "hole_id", "floor_m"]),
-        pd.DataFrame(columns=["east", "north", "rl"]).set_index(
-            pd.Index([], name="hole_id")),
-        "X", 250.0)
+    return (pd.DataFrame({"seam": ["X"] * 3, "hole_id": list("abc"),
+                          "east": points[:, 0], "north": points[:, 1]}),
+            pd.DataFrame(columns=["seam", "hole_id", "floor_m"]),
+            pd.DataFrame(columns=["east", "north", "rl"]).set_index(
+                pd.Index([], name="hole_id")))
+
+
+def test_collinear_points_fail_under_the_literal_reading():
+    """Bunyi harfiah 4.5.4 menuntut satu titik FISIK ke arah down dip."""
+    frame = poo.evaluate_areas(*_collinear_frame(), "X", 250.0,
+                               policy="require_offset_point")
     assert not frame.iloc[0]["memenuhi_kcmi"]
     assert "spotted dog" in frame.iloc[0]["temuan"]
     assert frame.iloc[0]["rasio"] < poo.COLLINEARITY_RATIO
+
+
+def test_collinear_points_pass_when_the_radius_supplies_the_dip_direction():
+    """Posisi pemilik data: cakram menyapu ke segala arah, termasuk dip."""
+    frame = poo.evaluate_areas(*_collinear_frame(), "X", 250.0,
+                               policy="radius_provides_dip")
+    assert frame.iloc[0]["memenuhi_kcmi"]
+    # Rasionya tetap diukur dan dilaporkan, hanya tidak lagi menggugurkan.
+    assert frame.iloc[0]["rasio"] < poo.COLLINEARITY_RATIO
+
+
+def test_two_points_fail_under_both_readings():
+    """Minimum 3 titik (4.5.4) tidak bergantung pembacaan mana pun."""
+    points, intersections, collars = _collinear_frame()
+    two = points.iloc[:2]
+    for policy in ("radius_provides_dip", "require_offset_point"):
+        frame = poo.evaluate_areas(two, intersections, collars, "X", 250.0,
+                                   policy=policy)
+        assert not frame.iloc[0]["memenuhi_kcmi"]
+        assert "minimum 3" in frame.iloc[0]["temuan"]
 
 
 def test_components_split_at_the_smaller_radius():
@@ -137,7 +160,8 @@ def test_the_quality_holes_in_this_dataset_form_a_traverse(data):
     intersections, dataset, cfg, points = data
     report = poo.spotted_dog_report(
         points.frame[points.frame["qualifies"]], intersections,
-        dataset.collars.set_index("hole_id"), radius.radii_for("moderat"))
+        dataset.collars.set_index("hole_id"), radius.radii_for("moderat"),
+        policy="require_offset_point")
     row = report[(report["seam"] == "B") & (report["kelas"] == "tertunjuk")].iloc[0]
     assert row["n_titik"] == 8
     assert row["rentang_arah_1_m"] > 3000

@@ -94,7 +94,8 @@ def _disc_mask(surface, points: np.ndarray, radius: float) -> np.ndarray:
 
 
 def _qualifying_points(points_frame: pd.DataFrame, intersections: pd.DataFrame,
-                       collars: pd.DataFrame, seam: str, radius: float
+                       collars: pd.DataFrame, seam: str, radius: float,
+                       policy: str = "radius_provides_dip"
                        ) -> tuple[np.ndarray, list[str]]:
     """Titik pengamatan pada bagian yang LOLOS KCMI 4.5.4 dan 4.5.5.
 
@@ -105,7 +106,8 @@ def _qualifying_points(points_frame: pd.DataFrame, intersections: pd.DataFrame,
     """
     if "qualifies" in points_frame.columns:
         points_frame = points_frame[points_frame["qualifies"]]
-    areas = evaluate_areas(points_frame, intersections, collars, seam, radius)
+    areas = evaluate_areas(points_frame, intersections, collars, seam, radius,
+                           policy=policy)
     if areas.empty:
         return np.empty((0, 2)), []
     good = areas[areas["memenuhi_kcmi"]]
@@ -120,7 +122,8 @@ def _qualifying_points(points_frame: pd.DataFrame, intersections: pd.DataFrame,
 def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
                   points_frame: pd.DataFrame, intersections: pd.DataFrame,
                   collars: pd.DataFrame, radii: dict[str, float],
-                  rd_grid: np.ndarray, rd_assumed: np.ndarray) -> SeamEstimate:
+                  rd_grid: np.ndarray, rd_assumed: np.ndarray,
+                  policy: str = "radius_provides_dip") -> SeamEstimate:
     """Klasifikasikan sel seam ini dan hitung tonasenya."""
     cell = model.roof.spacing ** 2
     klass = np.full(alive.shape, "", dtype=object)
@@ -131,7 +134,7 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
     for name in CLASSES:
         radius = radii[name]
         points, _ = _qualifying_points(points_frame, intersections, collars,
-                                       model.seam, radius)
+                                       model.seam, radius, policy=policy)
         if len(points) == 0:
             notes.append(f"kelas {LABELS[name]}: tidak ada bagian yang lolos "
                          "KCMI 4.5.4/4.5.5 pada radius ini.")
@@ -194,12 +197,13 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
 
 def _kcmi_compliant_holes(points_frame: pd.DataFrame, intersections: pd.DataFrame,
                           collars: pd.DataFrame, seam: str,
-                          radii: dict[str, float]) -> set[str]:
+                          radii: dict[str, float],
+                          policy: str = "radius_provides_dip") -> set[str]:
     """Lubang yang berada di bagian yang lolos KCMI 4.5.4/4.5.5 pada radius mana pun."""
     holes: set[str] = set()
     for radius in radii.values():
         _, names = _qualifying_points(points_frame, intersections, collars,
-                                      seam, radius)
+                                      seam, radius, policy=policy)
         holes.update(names)
     return holes
 
@@ -208,7 +212,8 @@ def self_check_map(estimates: list[SeamEstimate], models: dict[str, SeamModel],
                    limit_masks: dict[str, np.ndarray],
                    points_frame: pd.DataFrame, intersections: pd.DataFrame,
                    collars: pd.DataFrame, radii: dict[str, float],
-                   report: EstimateReport) -> None:
+                   report: EstimateReport,
+                   policy: str = "radius_provides_dip") -> None:
     """Aturan keras 4: tiap titik pengamatan jatuh di kelas tertinggi seam-nya.
 
     Tiga keadaan yang harus DIBEDAKAN, karena hanya satu yang bug:
@@ -233,7 +238,7 @@ def self_check_map(estimates: list[SeamEstimate], models: dict[str, SeamModel],
         model = models[estimate.key]
         alive = limit_masks.get(estimate.key)
         compliant = _kcmi_compliant_holes(points_frame, intersections, collars,
-                                          estimate.seam, radii)
+                                          estimate.seam, radii, policy)
         sub = points_frame[(points_frame["seam"] == estimate.seam)
                            & points_frame["qualifies"]]
         for _, row in sub.iterrows():
@@ -289,10 +294,11 @@ def run(models: dict[str, SeamModel], limit_masks: dict[str, np.ndarray],
                                         assumed)
         report.estimates.append(estimate_seam(
             key, model, alive, points_frame, intersections, collars, radii,
-            rd_grid, rd_assumed))
+            rd_grid, rd_assumed, policy=cfg.poo.two_direction_policy))
 
     self_check_map(report.estimates, models, limit_masks, points_frame,
-                   intersections, collars, radii, report)
+                   intersections, collars, radii, report,
+                   cfg.poo.two_direction_policy)
 
     for estimate in report.estimates:
         outside = estimate.tonnes.get(OUTSIDE, 0.0)

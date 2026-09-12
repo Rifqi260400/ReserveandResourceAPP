@@ -65,12 +65,16 @@ def test_only_qualifying_observation_points_may_classify(scene):
         collars, radii, cfg, quality=dataset.quality)
     strict_total = sum(e.tonnes.get("terukur", 0.0) for e in strict.estimates)
     loose_total = sum(e.tonnes.get("terukur", 0.0) for e in loose.estimates)
-    assert loose_total > strict_total * 2
+    assert loose_total > strict_total
 
 
 def test_coal_beyond_the_inferred_radius_is_excluded_not_folded(scene):
     """Aturan keras: tidak pernah dilipat menjadi Tereka."""
-    report = _run(scene)
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
+    strict = cfg.model_copy(update={"poo": cfg.poo.model_copy(
+        update={"two_direction_policy": "require_offset_point"})})
+    report = estimate_grid.run(models, masks, points.frame, intersections,
+                               collars, radii, strict, quality=dataset.quality)
     outside = sum(e.tonnes.get(estimate_grid.OUTSIDE, 0.0) for e in report.estimates)
     inferred = sum(e.tonnes.get("tereka", 0.0) for e in report.estimates)
     assert outside > 0
@@ -121,25 +125,58 @@ def test_tonnage_uses_plan_area_times_vertical_thickness(scene):
     assert estimate.tonnes["terukur"] == pytest.approx(expected)
 
 
-def test_the_reported_total_swings_on_a_threshold_kcmi_never_gives(scene):
-    """Ambang kemenerusan dua arah adalah operasionalisasi kami.
+def _total(report):
+    return sum(e.tonnes.get(k, 0.0) for e in report.estimates
+               for k in estimate_grid.CLASSES)
 
-    KCMI 4.5.5 menuntut "kemenerusan pada dua arah" tanpa angka. Pada data ini
-    pilihannya menggeser total yang dilaporkan sekitar tiga kali lipat, jadi ia
-    wajib terlihat, bukan terkubur di konstanta modul.
+
+def test_the_two_direction_reading_moves_the_total_three_fold(scene):
+    """KCMI 4.5.5 menuntut "kemenerusan dua arah" tanpa memberi angka.
+
+    Kedua pembacaan sah, dan selisihnya besar - jadi pilihannya wajib terlihat
+    di konfigurasi, bukan terkubur di konstanta modul.
     """
-    original = poo.COLLINEARITY_RATIO
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
     totals = {}
-    try:
-        for threshold in (0.10, 0.15):
-            poo.COLLINEARITY_RATIO = threshold
-            report = _run(scene)
-            totals[threshold] = sum(
-                e.tonnes.get(k, 0.0) for e in report.estimates
-                for k in estimate_grid.CLASSES)
-    finally:
-        poo.COLLINEARITY_RATIO = original
-    assert totals[0.10] > totals[0.15] * 2.5
+    for policy in ("radius_provides_dip", "require_offset_point"):
+        variant = cfg.model_copy(update={"poo": cfg.poo.model_copy(
+            update={"two_direction_policy": policy})})
+        totals[policy] = _total(estimate_grid.run(
+            models, masks, points.frame, intersections, collars, radii, variant,
+            quality=dataset.quality))
+    assert totals["radius_provides_dip"] > totals["require_offset_point"] * 2.5
+
+
+def test_strike_aligned_points_pass_under_the_owners_reading(scene):
+    """Tiga titik berjajar searah strike sah: radius yang memberi arah dip."""
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
+    report = _run(scene)
+    # Seam B: 8 titik dalam satu lintasan searah strike (simpangan 0,2 derajat).
+    b = next(e for e in report.estimates if e.seam == "B")
+    assert b.tonnes["terukur"] > 0
+    assert b.tonnes[estimate_grid.OUTSIDE] == 0.0
+
+
+def test_the_minimum_of_three_points_still_bites_under_both_readings(scene):
+    """4.5.4 tetap berlaku: seam A1 hanya punya 1 titik pengamatan."""
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
+    for policy in ("radius_provides_dip", "require_offset_point"):
+        variant = cfg.model_copy(update={"poo": cfg.poo.model_copy(
+            update={"two_direction_policy": policy})})
+        report = estimate_grid.run(models, masks, points.frame, intersections,
+                                   collars, radii, variant, quality=dataset.quality)
+        a1 = next(e for e in report.estimates if e.seam == "A1")
+        assert sum(a1.tonnes.get(k, 0.0) for k in estimate_grid.CLASSES) == 0.0
+
+
+def test_collinearity_is_still_measured_even_when_it_no_longer_disqualifies(scene):
+    """Angkanya tetap dilaporkan supaya CPI dapat menimbang sendiri."""
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
+    frame = poo.evaluate_areas(
+        points.frame[points.frame["qualifies"]], intersections, collars, "B",
+        250.0, policy="radius_provides_dip")
+    assert "rasio" in frame and "rentang_arah_2_m" in frame
+    assert (frame["kebijakan"] == "radius_provides_dip").all()
 
 
 def test_the_rd_assumed_fraction_is_carried_per_seam(scene):
