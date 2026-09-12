@@ -65,10 +65,9 @@ def _checks(report: AuditReport, severity: Severity) -> set[str]:
 
 
 def test_undeclared_config_opens_every_gate(gated):
-    # G1 tidak lagi muncul: penggantian nama A -> A1 menghapus tabrakannya di
-    # akar, bukan menyelesaikannya dengan aturan hitung.
     assert _checks(gated, Severity.STOP) == {
-        "G2_quality_basis", "G4_weathering", "G6_populations", "G7_proximate",
+        "G1_seam_collision", "G2_quality_basis", "G4_weathering",
+        "G6_populations", "G7_proximate",
     }
 
 
@@ -76,48 +75,46 @@ def test_declaring_the_decisions_closes_every_gate(resolved):
     assert resolved.of(Severity.STOP) == []
 
 
-def test_renaming_removed_the_collision_at_the_root(gated):
-    """Tabrakan induk-anak sudah tidak ada pada konfigurasi kerja.
+def test_the_three_seams_keep_their_file_names(gated):
+    """A, A1 dan A2 dilaporkan terpisah, sesuai penamaan di berkas.
 
-    Sebelumnya seam 'A' di 23 lubang bertabrakan dengan 'A1'/'A2' di 30 lubang,
-    hull bertumpang 94,8 ha. Pemilik data menyatakan 'A' adalah seam yang MASIH
-    MENYATU, jadi ia dinamai ulang 'A1'. Penamaan ulang menghapus tabrakannya
-    di akar - tidak ada lagi induk dan anak yang menempati ruang yang sama -
-    bukan menutupinya dengan aturan hitung.
+    Penamaan ulang A -> A1 yang sempat dipakai sudah dibatalkan pemilik data
+    setelah memeriksa berkas kualitas.
     """
-    assert "seam_collision" not in gated.tables
-    assert not [f for f in gated.of(Severity.STOP) if f.check == "G1_seam_collision"]
-    assert any("tidak ada seam induk" in f.message
-               for f in gated.of(Severity.INFO) if f.check == "G1_seam_collision")
-
-
-def test_the_alias_is_applied_once_at_read_time(gated):
     cfg = Config.load(GATED)
     dataset = load_minex(cfg)
-    applied = dataset.provenance["seam_aliases"]
-    assert applied["lithology"] == {"A -> A1": 23}
-    assert applied["quality"] == {"A -> A1": 44}
+    assert cfg.minex.seam_aliases == {}
     body = dataset.intervals[~dataset.intervals["is_marker"]]
-    assert "A" not in set(body["seam"])
-    assert body[body["seam"] == "A1"]["hole_id"].nunique() == 48
-    assert body[body["seam"] == "A2"]["hole_id"].nunique() == 30
+    counts = body.groupby("seam")["hole_id"].nunique().to_dict()
+    assert counts == {"A": 23, "A1": 25, "A2": 30, "B": 59}
 
 
-def test_the_collision_detector_still_fires_when_a_collision_exists():
-    """Detektornya tidak dilemahkan - hanya datanya yang berubah."""
-    cfg = Config.load(GATED)
-    cfg.minex = cfg.minex.model_copy(update={"seam_aliases": {}})
-    cfg.stratigraphy = ["A", "B"]
-    cfg.seam_splits = {"A": ["A1", "A2"]}
-    cfg.seam_policy = cfg.seam_policy.model_copy(
-        update={"collision_resolution": "undeclared", "collision_basis": ""})
-    report = run_gate2(load_minex(cfg), cfg, AuditReport())
-    row = report.tables["seam_collision"].iloc[0]
+def test_the_collision_is_reported_because_the_three_share_one_ground(gated):
+    """A di 23 lubang dan A1/A2 di 30 lubang menempati tanah yang sama.
+
+    Tidak satu pun lubang memuat keduanya, jadi pemeriksaan per lubang tidak
+    menemukan apa pun; tumpangnya areal - hull keduanya bertumpang 94,8 ha.
+    """
+    row = gated.tables["seam_collision"].iloc[0]
     assert row["induk"] == "A" and row["anak"] == "A1, A2"
     assert row["lubang_keduanya"] == 0
     assert row["lubang_induk"] == 23 and row["lubang_anak"] == 30
     assert row["luas_hull_bertumpang_ha"] > 50
-    assert "G1_seam_collision" in {f.check for f in report.of(Severity.STOP)}
+
+
+def test_the_three_stay_one_stratigraphic_unit_so_ground_is_not_claimed_twice():
+    """Dilaporkan bertiga, dialokasikan sebagai satu unit.
+
+    seam_splits menjaga A, A1 dan A2 berbagi satu tesselasi. Tanpa itu, tiap
+    seam menebar poligonnya sendiri di atas tanah yang sama.
+    """
+    cfg = Config.load(GATED)
+    assert cfg.seam_splits == {"A": ["A1", "A2"]}
+    assert cfg.parent_seam("A1") == "A" and cfg.parent_seam("A2") == "A"
+    assert cfg.seam_policy.collision_resolution == "treat_as_distinct"
+    # Metode circular membuat lingkaran antar seam BERTUMPANG, tidak seperti
+    # Voronoi. Dasarnya wajib menyebut itu.
+    assert "circular" in cfg.seam_policy.collision_basis.lower()
 
 
 def test_ash_cv_correlation_exposes_a_daf_column(gated):
@@ -235,7 +232,7 @@ def test_requiring_quality_shrinks_the_measured_class(gated):
     per_seam = frame.set_index(["seam", "populasi"])["n_lubang"]
     assert per_seam[("B", "seluruh lubang")] == 59
     assert per_seam[("B", "lubang berkualitas")] == 8
-    assert per_seam[("A1", "lubang berkualitas")] == 9
+    assert per_seam[("A", "seluruh lubang")] == 23
     assert per_seam[("A2", "lubang berkualitas")] == 10
     # Susutnya sekitar separuh, bukan seperempat seperti pengukuran per lubang.
     shrink = 1 - totals["lubang berkualitas"] / totals["seluruh lubang"]

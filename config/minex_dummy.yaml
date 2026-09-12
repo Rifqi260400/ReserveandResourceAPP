@@ -67,16 +67,17 @@ minex:
     batubara. Catatan: uji basis ini bertumpu pada faktor (100-M-ASH)/100, sedangkan proksimat
     pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
     diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
-  seam_aliases:
-    A: A1
+  seam_aliases: {}
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
 core_loss_treatment: as_coal
 stratigraphy:
-- A1
-- A2
+- A
 - B
-seam_splits: {}
+seam_splits:
+  A:
+  - A1
+  - A2
 geological_condition: moderat
 geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan
   dataset dummy dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
@@ -137,7 +138,7 @@ maps:
     include_subcrop: true
     clip_to_subcrop: true
     per_surface_files: true
-estimation_method: voronoi
+estimation_method: circular
 block_boundary_wkt: ''
 assumed_rd_t_per_m3: 1.3
 weathering:
@@ -160,12 +161,23 @@ observation_point:
     - cukup ketebalan - akan menaikkan kelas atas dasar geometri semata dan ditolak.'
 seam_policy:
   collision_resolution: treat_as_distinct
-  collision_basis: 'Diselesaikan pemilik data 2026-09-12 dengan mengganti penamaan, bukan
-    dengan aturan hitung. Seam yang dilog ''A'' di 23 lubang adalah seam yang MASIH MENYATU;
-    di 30 lubang lain ia memecah menjadi dua. Karena itu ''A'' dinamai ulang ''A1'' - leaf
-    atas - sehingga A1 hadir di 48 lubang dan A2 di 30 lubang. Tidak ada lagi induk yang bertabrakan
-    dengan anaknya, sehingga tidak ada lagi dua tesselasi yang menutup area yang sama. Dugaan
-    saya sebelumnya bahwa tebal 14,49 m memuat parting 3,4 m yang belum dikurangkan DIBATALKAN
-    oleh pemilik data: itu batubara menyatu. Konsekuensi yang harus ditangani tahap 4: tebal
-    A1 bimodal - 14,49 m di 23 lubang menyatu lawan 2,20 m di 25 lubang terpecah - sehingga
-    garis split wajib dimodelkan sebagai batas, bukan diinterpolasi mulus.'
+  collision_basis: 'Dinyatakan pemilik data 2026-09-12 setelah memeriksa berkas kualitas:
+    A, A1 dan A2 dilaporkan sebagai TIGA seam terpisah sesuai penamaan di berkas. Penamaan
+    ulang A->A1 yang sempat dipakai DIBATALKAN. Konsekuensi yang ditangani kode, bukan diabaikan:
+    A hadir di 23 lubang dan A1/A2 di 30 lubang tanpa satu pun lubang memuat keduanya, dan
+    hull keduanya bertumpang 94,8 ha. Ketiganya karena itu tetap didaftarkan sebagai SATU
+    unit stratigrafi lewat seam_splits, sehingga alokasi luas memakai satu tesselasi bersama
+    dan tidak ada tanah yang diklaim dua kali - meski ketiganya dilaporkan dengan namanya
+    masing-masing. PERINGATAN: pada metode circular, lingkaran seam A dan seam A1 SALING BERTUMPANG
+    di bidang datar, berbeda dari Voronoi yang selnya tidak pernah bertumpang. Penjumlahan
+    tonase lintas seam pada unit yang sama WAJIB melewati pemeriksaan tumpang tindih bidang
+    datar.'
+poo:
+  survey_method: null
+  all_holes_full_cored: null
+  hole_types: null
+  all_holes_geophysically_logged: null
+  geophysically_logged_holes: []
+  min_coal_recovery_pct: null
+  spacing_method: otomatis
+  geostatistics_min_data: 30

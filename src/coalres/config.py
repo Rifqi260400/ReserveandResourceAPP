@@ -226,6 +226,35 @@ class SeamPolicy(_Strict):
         return self
 
 
+class PoOSpec(_Strict):
+    """Kriteria Titik Pengamatan menurut Pedoman Praktis KCMI 2017 pasal 4.5.2.
+
+    Ketiga butirnya wajib. Butir (a) metoda survey dan butir (b) jenis lubang
+    serta logging geofisika TIDAK ada di berkas flat, jadi keduanya dinyatakan
+    di sini. Selama belum dinyatakan, tidak ada lubang yang lolos: menganggap
+    terpenuhi berarti mengklaim mutu data yang belum pernah diperiksa.
+    """
+
+    # 4.5.2 (a) - total station atau GPS geodetik. Selain itu tidak memenuhi.
+    survey_method: Literal["total_station", "gps_geodetik", "handheld_gps",
+                           "tidak_diketahui"] | None = None
+
+    # 4.5.2 (b) - full coring, atau logging geofisika WAJIB bila bukan.
+    all_holes_full_cored: bool | None = None
+    hole_types: dict[str, Literal["full_coring", "open_hole", "touch_coring"]] | None = None
+    all_holes_geophysically_logged: bool | None = None
+    geophysically_logged_holes: list[str] = Field(default_factory=list)
+
+    # 4.5.2 (c) - keterwakilan sampel. None = tidak diperiksa (data tidak ada).
+    min_coal_recovery_pct: float | None = Field(default=None, ge=0, le=100)
+
+    # 4.5.3 - jarak antar PoO ditentukan per seam dari variabilitasnya.
+    # Geostatistik disarankan bila data >= 30 (Journel & Huijbregts 1978);
+    # di bawah itu, pendekatan kompleksitas geologi SNI 5015:2019 jadi cadangan.
+    spacing_method: Literal["geostatistik", "sni_kompleksitas", "otomatis"] = "otomatis"
+    geostatistics_min_data: int = Field(default=30, ge=3)
+
+
 class ObservationPointSpec(_Strict):
     """Apa yang membuat sebuah lubang menjadi TITIK OBSERVASI.
 
@@ -377,6 +406,7 @@ class Config(_Strict):
     seam_policy: SeamPolicy = Field(default_factory=SeamPolicy)
     weathering: WeatheringSpec = Field(default_factory=WeatheringSpec)
     observation_point: ObservationPointSpec = Field(default_factory=ObservationPointSpec)
+    poo: PoOSpec = Field(default_factory=PoOSpec)
 
     classification_radii_m: RadiiTable
     cutoffs: Cutoffs
@@ -384,7 +414,10 @@ class Config(_Strict):
     rpeee_constraints: RpeeeConstraints
 
     maps: MapSettings
-    estimation_method: EstimationMethod = "voronoi"
+    # Pedoman Praktis KCMI 2017 mengilustrasikan metode CIRCULAR pada pasal
+    # 4.5.4 dan 4.5.5: gabungan cakram di sekeliling tiap titik pengamatan,
+    # berpita Terukur - Tertunjuk - Tereka. Itu bawaannya.
+    estimation_method: EstimationMethod = "circular"
     block_boundary_wkt: str = ""
     assumed_rd_t_per_m3: float | None = Field(default=None, gt=0)
 
