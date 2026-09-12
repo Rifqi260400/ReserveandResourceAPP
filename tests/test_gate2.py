@@ -102,6 +102,24 @@ def test_the_collision_is_reported_because_the_three_share_one_ground(gated):
     assert row["luas_hull_bertumpang_ha"] > 50
 
 
+def test_hull_overlap_alone_would_have_been_misleading(gated):
+    """Tumpang tindih hull 94,8 ha itu artefak, bukan percampuran.
+
+    Seam A menyatu di barat DAN di timur, anaknya terpecah di tengah - pola
+    split lens. Convex hull seam A karena itu menelan seluruh wilayah anaknya
+    dan melaporkan tumpang tindih besar. Kemurnian domain mengukur yang
+    sebenarnya: 94% lubang bertetangga sejenis, hanya 3 lubang di batas lensa.
+    """
+    row = gated.tables["seam_collision"].iloc[0]
+    assert row["luas_hull_bertumpang_ha"] > 50
+    assert row["kemurnian_domain"] >= 0.90
+    assert row["domain_terpisah"]
+    assert set(row["lubang_di_batas"].split(", ")) == {"H013", "H017", "Q019"}
+    # Domain terpisah: temuannya turun dari STOP menjadi keterangan.
+    assert any("SPLIT LENS" in f.message for f in gated.findings
+               if f.check == "G1_seam_collision")
+
+
 def test_the_three_stay_one_stratigraphic_unit_so_ground_is_not_claimed_twice():
     """Dilaporkan bertiga, dialokasikan sebagai satu unit.
 

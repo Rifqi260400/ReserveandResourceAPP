@@ -27,6 +27,16 @@ MIN_SAMPLES_FOR_CORRELATION = 10
 # Nilai BOW yang berulang pada mayoritas lubang adalah konstanta, bukan bacaan.
 WEATHERING_CONSTANT_FRAC = 0.60
 
+# Kemurnian domain: pecahan lubang yang tetangga terdekatnya sejenis. Mendekati
+# 1 berarti induk dan anak menempati wilayah yang terpisah rapi - ada garis
+# split yang dapat dipetakan. Mendekati 0,5 berarti keduanya bercampur acak.
+#
+# Ini mengukur hal yang TIDAK diukur tumpang tindih convex hull: ketika induk
+# hadir di dua sisi dan anaknya di tengah (pola split lens), hull induk menelan
+# seluruh wilayah anak dan melaporkan tumpang tindih besar yang sebenarnya
+# artefak, bukan percampuran.
+DOMAIN_SEPARABLE_PURITY = 0.85
+
 
 def _key_columns(frame: pd.DataFrame) -> list[str]:
     return [c for c in ("hole_id", "seam", "depth_from", "depth_to") if c in frame.columns]
@@ -58,6 +68,8 @@ def check_seam_collision(dataset: HoleDataset, cfg: Config, report: AuditReport)
 
         px = dataset.collars.set_index("hole_id")[["east", "north"]]
         overlap_area_ha = _overlap_hull_ha(px, parent_holes, child_holes)
+        purity, impure = _domain_purity(px, parent_holes, child_holes)
+        separable = purity >= DOMAIN_SEPARABLE_PURITY
         declared = cfg.seam_policy.collision_resolution != "undeclared"
 
         rows.append({
@@ -65,18 +77,30 @@ def check_seam_collision(dataset: HoleDataset, cfg: Config, report: AuditReport)
             "lubang_induk": len(parent_holes), "lubang_anak": len(child_holes),
             "lubang_keduanya": len(both),
             "luas_hull_bertumpang_ha": round(overlap_area_ha, 1),
+            "kemurnian_domain": round(purity, 3),
+            "lubang_di_batas": ", ".join(impure),
+            "domain_terpisah": separable,
         })
         report.add(
             Severity.INFO if declared else Severity.STOP, "G1_seam_collision",
             f"seam induk '{parent}' hadir di {len(parent_holes)} lubang dan anaknya "
             f"{sorted(child_set)} di {len(child_holes)} lubang, dengan "
             f"{len(both)} lubang memuat keduanya. Hull keduanya bertumpang "
-            f"{overlap_area_ha:.1f} ha. Tanpa keputusan, '{parent}' dan "
-            f"{sorted(child_set)} akan menghasilkan dua tesselasi yang sama-sama "
-            "menutup area itu dan tonasenya terhitung DUA KALI. Tidak ada gejala "
-            "per lubang: tiap lubang tampak konsisten.",
+            f"{overlap_area_ha:.1f} ha, TETAPI kemurnian domain "
+            f"{purity:.0%}"
+            + (f" - domain keduanya TERPISAH dan dapat dipetakan; tumpang hull "
+               f"{overlap_area_ha:.1f} ha itu artefak convex hull, bukan "
+               "percampuran nyata. Ini pola SPLIT LENS: parting menyusup lalu "
+               "menghilang, sehingga induk hadir di luar lensa dan anaknya di "
+               f"dalam. Lubang di batas: {', '.join(impure) or 'tidak ada'}."
+               if separable else
+               " - domain keduanya BERCAMPUR, tidak ada garis split yang dapat "
+               "dipetakan. Dua tesselasi akan sama-sama menutup area itu dan "
+               "tonasenya terhitung DUA KALI, tanpa gejala per lubang."),
             seam=parent,
-            remedy="Isi seam_policy.collision_resolution: 'merge_children' "
+            remedy="Bila domain terpisah, pertahankan penamaan induk-anak dan "
+                   "petakan batas lensanya di tahap 4. "
+                   "Isi seam_policy.collision_resolution: 'merge_children' "
                    "(A1+A2 dikembalikan menjadi A), 'split_parent' (A dipecah "
                    "mengikuti pola tetangga), atau 'treat_as_distinct' (keduanya "
                    "seam berbeda yang tidak menempati ruang yang sama). Sertakan "
@@ -122,6 +146,26 @@ def _overlap_hull_ha(coords: pd.DataFrame, a: set[str], b: set[str]) -> float:
     if ha is None or hb is None:
         return float("nan")
     return ha.intersection(hb).area / 10_000.0
+
+
+def _domain_purity(coords: pd.DataFrame, a: set[str], b: set[str]
+                   ) -> tuple[float, list[str]]:
+    """Pecahan lubang yang tetangga terdekatnya sejenis, dan yang tidak."""
+    try:
+        from scipy.spatial import cKDTree
+    except Exception:
+        return float("nan"), []
+    names = sorted(a) + sorted(b)
+    frame = coords.reindex(names).dropna()
+    if len(frame) < 4:
+        return float("nan"), []
+    names = list(frame.index)
+    labels = np.array([0 if name in a else 1 for name in names])
+    points = frame.to_numpy(float)
+    _, index = cKDTree(points).query(points, k=2)
+    same = labels[index[:, 1]] == labels
+    impure = [names[i] for i in range(len(names)) if not same[i]]
+    return float(same.mean()), impure
 
 
 def check_quality_basis(dataset: HoleDataset, cfg: Config, report: AuditReport) -> None:
