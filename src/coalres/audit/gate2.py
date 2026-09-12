@@ -434,6 +434,10 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
     body = dataset.intervals
     body = body[~body["is_marker"]] if "is_marker" in body else body
     coords = dataset.collars.set_index("hole_id")[["east", "north"]]
+    # Kualitas diukur PER SEAM, bukan per lubang. Sebuah lubang yang punya
+    # kualitas pada seam B tidak menjadikannya titik observasi untuk seam A1.
+    # Mengukurnya per lubang melebih-lebihkan populasi secara besar-besaran.
+    quality_pairs = set(zip(dataset.quality["hole_id"], dataset.quality["seam"]))
     quality_holes = set(dataset.quality["hole_id"])
     radii = cfg.radii
 
@@ -444,8 +448,9 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
         if len(extent) < 3:
             continue
         hull = MultiPoint(extent.to_numpy(float)).convex_hull
+        with_quality = {h for h in seam_holes if (h, seam) in quality_pairs}
         for label, population in (("seluruh lubang", seam_holes),
-                                  ("lubang berkualitas", seam_holes & quality_holes)):
+                                  ("lubang berkualitas", with_quality)):
             points = coords.reindex(sorted(population)).dropna()
             entry = {"seam": seam, "populasi": label, "n_lubang": len(points)}
             if len(points) == 0:
@@ -472,6 +477,9 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
     spec = cfg.observation_point
     all_holes = len(set(dataset.collars["hole_id"]))
     n_quality = len(quality_holes & set(dataset.collars["hole_id"]))
+    n_pairs = len(body.groupby(["hole_id", "seam"]).size())
+    n_pairs_quality = sum(1 for key in body.groupby(["hole_id", "seam"]).groups
+                          if key in quality_pairs)
     totals = frame.groupby("populasi")[["terukur_ha", "tertunjuk_ha", "tereka_ha"]].sum()
     measured_all = float(totals.loc["seluruh lubang", "terukur_ha"])
     measured_q = float(totals.loc["lubang berkualitas", "terukur_ha"])
@@ -482,6 +490,11 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
         "G6_populations",
         f"dua populasi titik observasi: {all_holes} lubang seluruhnya, "
         f"{n_quality} di antaranya punya kualitas ({100 * n_quality / max(all_holes, 1):.0f}%). "
+        f"Diukur PER SEAM - dan itu yang berlaku - hanya {n_pairs_quality} dari "
+        f"{n_pairs} pasangan lubang-seam yang punya kualitas "
+        f"({100 * n_pairs_quality / max(n_pairs, 1):.0f}%): sebuah lubang yang "
+        "punya kualitas pada satu seam tidak menjadikannya titik observasi bagi "
+        "seam lain di lubang yang sama. "
         f"Luas Terukur - DIJUMLAHKAN antar seam, jadi bukan luas bidang datar - "
         f"turun dari {measured_all:.0f} ha menjadi {measured_q:.0f} ha "
         f"({shrink:.0f}% lebih kecil) bila titik observasi menuntut kualitas. "

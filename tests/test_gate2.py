@@ -223,9 +223,20 @@ def test_conflicting_duplicates_stop_but_identical_ones_only_warn(gated):
 
 
 def test_requiring_quality_shrinks_the_measured_class(gated):
+    """Kualitas dihitung PER SEAM, dan itu jauh lebih menggigit.
+
+    Diukur per lubang, seam B tampak punya 18 titik - seluruh lubang
+    berkualitas. Diukur per seam, hanya 8 lubang yang punya kualitas pada B.
+    Pengukuran per lubang melebih-lebihkan populasi lebih dari dua kali lipat.
+    """
     frame = gated.tables["hole_populations"]
     totals = frame.groupby("populasi")["terukur_ha"].sum()
     assert totals["lubang berkualitas"] < totals["seluruh lubang"]
-    # 18 dari 60 lubang punya kualitas; plafon kelas ikut turun.
-    assert frame[frame["seam"] == "B"].set_index("populasi").loc[
-        "lubang berkualitas", "n_lubang"] == 18
+    per_seam = frame.set_index(["seam", "populasi"])["n_lubang"]
+    assert per_seam[("B", "seluruh lubang")] == 59
+    assert per_seam[("B", "lubang berkualitas")] == 8
+    assert per_seam[("A1", "lubang berkualitas")] == 9
+    assert per_seam[("A2", "lubang berkualitas")] == 10
+    # Susutnya sekitar separuh, bukan seperempat seperti pengukuran per lubang.
+    shrink = 1 - totals["lubang berkualitas"] / totals["seluruh lubang"]
+    assert 0.45 < shrink < 0.60
