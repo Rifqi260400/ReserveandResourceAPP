@@ -1,11 +1,11 @@
-__pycache__/
 *.py[cod]
 .pytest_cache/
-output/
 .venv/
-sample_data/workbooks/
+__pycache__/
+data/minex/topo.dat
+data/minex/topodig.dxf
+output/
 sample_data/las/
 sample_data/quality.csv
 sample_data/topo.dxf
-data/minex/topo.dat
-data/minex/topodig.dxf
+sample_data/workbooks/
