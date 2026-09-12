@@ -119,8 +119,8 @@ def test_tonnage_uses_plan_area_times_vertical_thickness(scene):
     estimate = next(e for e in report.estimates if e.seam == "A")
     m = models[estimate.key]
     mask = estimate.klass == "terukur"
-    rd_grid, _ = estimate_grid._rd_grids(m, intersections, collars,
-                                         dataset.quality, 1.30)
+    rd_grid, _, _ = estimate_grid._rd_grids(m, intersections, collars,
+                                            dataset.quality, 1.30, cfg=cfg)
     expected = float(np.nansum(m.isopach.z[mask] * rd_grid[mask])) * estimate.cell_area_m2
     assert estimate.tonnes["terukur"] == pytest.approx(expected)
 
@@ -179,9 +179,43 @@ def test_collinearity_is_still_measured_even_when_it_no_longer_disqualifies(scen
     assert (frame["kebijakan"] == "radius_provides_dip").all()
 
 
-def test_the_rd_assumed_fraction_is_carried_per_seam(scene):
+def test_the_table_shows_the_rd_it_actually_used(scene):
+    """Tabel menyebut NILAI RD-nya, bukan hanya pecahan sel.
+
+    Kolom pecahan saja pernah terbaca sebagai "RD = 1" - dan kalau pemilik data
+    salah membacanya, peninjau laporan juga akan.
+    """
+    report = _run(scene)
+    frame = report.table("Sumberdaya")
+    assert "RD dipakai t/m3 (median)" in frame.columns
+    assert "RD dipakai t/m3 (min-maks)" in frame.columns
+    for estimate in report.estimates:
+        assert 1.0 < estimate.rd_median < 2.0
+        assert estimate.rd_min <= estimate.rd_median <= estimate.rd_max
+
+
+def test_missing_rd_is_separated_from_assumed_rd_basis(scene):
+    """Dua hal berbeda, sengaja tidak digabung.
+
+    Sel tanpa hasil lab memakai konstanta konfigurasi - NILAInya ditebak. Sel
+    dengan hasil lab tetapi tanpa TM memakai angka terukur - yang ditebak
+    BASISnya. Satu bendera untuk keduanya menyembunyikan mana yang mana.
+    """
     report = _run(scene)
     for estimate in report.estimates:
-        assert 0.0 <= estimate.rd_assumed_fraction <= 1.0
-    # Sebagian besar sel masih memakai RD asumsi, dan itu harus terlihat.
-    assert max(e.rd_assumed_fraction for e in report.estimates) > 0.5
+        assert 0.0 <= estimate.no_lab_rd_fraction <= 1.0
+        assert 0.0 <= estimate.assumed_basis_fraction <= 1.0
+        # Tiap sel masuk tepat satu kelompok.
+        assert estimate.no_lab_rd_fraction + estimate.assumed_basis_fraction \
+            == pytest.approx(1.0, abs=1e-6)
+    # Pada data ini sebagian besar sel memang tidak punya RD lab sama sekali.
+    assert min(e.no_lab_rd_fraction for e in report.estimates) > 0.5
+
+
+def test_a_totals_row_never_sums_an_average_or_a_fraction(scene):
+    report = _run(scene)
+    frame = report.table("Sumberdaya")
+    total = frame[frame["seam"] == "TOTAL"].iloc[0]
+    for column in ("RD dipakai t/m3 (median)", "% sel tanpa RD lab",
+                   "% sel basis RD diasumsikan"):
+        assert pd.isna(total[column]), column

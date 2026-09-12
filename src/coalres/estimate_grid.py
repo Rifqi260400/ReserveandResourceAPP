@@ -47,7 +47,19 @@ class SeamEstimate:
     klass: np.ndarray                 # (ny, nx) string kelas atau "" bila mati
     tonnes: dict[str, float] = field(default_factory=dict)
     area_ha: dict[str, float] = field(default_factory=dict)
-    rd_assumed_fraction: float = float("nan")
+    # DUA hal yang berbeda, sengaja dipisah - menggabungkannya menyembunyikan
+    # mana yang tidak diukur sama sekali dan mana yang diukur tetapi basisnya
+    # diasumsikan:
+    #   no_lab_rd_fraction   sel yang tidak punya hasil RD laboratorium sama
+    #                        sekali, sehingga memakai konstanta konfigurasi.
+    #   assumed_basis_fraction  sel yang PUNYA RD laboratorium, tetapi basisnya
+    #                        diperlakukan in-situ tanpa konversi Preston &
+    #                        Sanders karena TM tidak tersedia.
+    no_lab_rd_fraction: float = float("nan")
+    assumed_basis_fraction: float = float("nan")
+    rd_median: float = float("nan")
+    rd_min: float = float("nan")
+    rd_max: float = float("nan")
     demotions: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
@@ -72,13 +84,25 @@ class EstimateReport:
                 row[f"{LABELS[klass]} (ha)"] = round(e.area_ha.get(klass, 0.0), 1)
             row[f"{OUTSIDE} (ton)"] = round(e.tonnes.get(OUTSIDE, 0.0))
             row[f"{OUTSIDE} (ha)"] = round(e.area_ha.get(OUTSIDE, 0.0), 1)
-            row["RD asumsi (frac)"] = round(e.rd_assumed_fraction, 3)
+            # Nilai RD yang BENAR-BENAR dipakai, supaya tidak perlu ditebak
+            # dari nama kolom.
+            row["RD dipakai t/m3 (median)"] = round(e.rd_median, 3)
+            row["RD dipakai t/m3 (min-maks)"] = (
+                f"{e.rd_min:.3f}-{e.rd_max:.3f}"
+                if np.isfinite(e.rd_min) else "")
+            row["% sel tanpa RD lab"] = round(100 * e.no_lab_rd_fraction, 1)
+            row["% sel basis RD diasumsikan"] = round(
+                100 * e.assumed_basis_fraction, 1)
             rows.append(row)
         frame = pd.DataFrame(rows)
         if not frame.empty:
             total = frame.drop(columns=["seam", "domain"]).sum(numeric_only=True)
-            total["RD asumsi (frac)"] = float("nan")
-            frame.loc[len(frame)] = {"seam": "TOTAL", "domain": "", **total}
+            # Rata-rata dan pecahan tidak boleh dijumlahkan.
+            for column in ("RD dipakai t/m3 (median)", "% sel tanpa RD lab",
+                           "% sel basis RD diasumsikan"):
+                total[column] = float("nan")
+            frame.loc[len(frame)] = {"seam": "TOTAL", "domain": "",
+                                     "RD dipakai t/m3 (min-maks)": "", **total}
         return frame
 
 
@@ -123,6 +147,7 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
                   points_frame: pd.DataFrame, intersections: pd.DataFrame,
                   collars: pd.DataFrame, radii: dict[str, float],
                   rd_grid: np.ndarray, rd_assumed: np.ndarray,
+                  rd_basis_assumed: np.ndarray | None = None,
                   policy: str = "radius_provides_dip") -> SeamEstimate:
     """Klasifikasikan sel seam ini dan hitung tonasenya."""
     cell = model.roof.spacing ** 2
@@ -161,15 +186,25 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
         tonnes[name] = float(np.nansum(thickness[mask] * rd_grid[mask])) * cell
 
     live = alive & np.isfinite(thickness)
-    fraction = float(rd_assumed[live].mean()) if live.any() else float("nan")
-    return SeamEstimate(key=key, seam=model.seam, cell_area_m2=cell, klass=klass,
-                        tonnes=tonnes, area_ha=area, rd_assumed_fraction=fraction,
-                        demotions=demotions, notes=notes)
+    if rd_basis_assumed is None:
+        rd_basis_assumed = np.zeros_like(rd_assumed)
+    empty = not live.any()
+    return SeamEstimate(
+        key=key, seam=model.seam, cell_area_m2=cell, klass=klass,
+        tonnes=tonnes, area_ha=area,
+        no_lab_rd_fraction=float("nan") if empty else float(rd_assumed[live].mean()),
+        assumed_basis_fraction=(float("nan") if empty
+                                else float(rd_basis_assumed[live].mean())),
+        rd_median=float("nan") if empty else float(np.median(rd_grid[live])),
+        rd_min=float("nan") if empty else float(rd_grid[live].min()),
+        rd_max=float("nan") if empty else float(rd_grid[live].max()),
+        demotions=demotions, notes=notes)
 
 
 def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
               collars: pd.DataFrame, quality: pd.DataFrame | None,
-              assumed_rd: float, cfg=None) -> tuple[np.ndarray, np.ndarray]:
+              assumed_rd: float, cfg=None
+              ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Grid RD IN-SITU dan grid penanda "RD ini asumsi", dari lubang terdekat.
 
     RD laboratorium TIDAK boleh masuk ke perkalian tonase apa adanya. KCMI
@@ -205,7 +240,7 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
         hole = row["hole_id"]
         if hole not in collars.index:
             continue
-        value, is_assumed = assumed_rd, True
+        value, is_assumed, basis_assumed = assumed_rd, True, False
         if quality is not None:
             match = quality[(quality["hole_id"] == hole)
                             & (quality["seam"] == model.seam)]
@@ -218,22 +253,26 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
                     tm is None or im is None)
                 if unconvertible and fallback == "treat_as_in_situ":
                     # Keputusan pemilik data yang tercatat: RD lab dipakai apa
-                    # adanya. Ditandai ASUMSI supaya muncul di kolom "RD asumsi".
-                    value, is_assumed = lab, True
+                    # adanya. NILAInya terukur - yang diasumsikan BASISnya, dan
+                    # itu ditandai terpisah.
+                    value, is_assumed, basis_assumed = lab, False, True
                 else:
                     value, is_assumed, _ = resolve_in_situ_rd(
                         lab, basis, tm, im, assumed_rd)
         collar = collars.loc[hole]
         rows.append((float(collar["east"]), float(collar["north"]), value,
-                     1.0 if is_assumed else 0.0))
+                     1.0 if is_assumed else 0.0,
+                     1.0 if basis_assumed else 0.0))
 
     gx, gy = np.meshgrid(model.roof.x, model.roof.y)
     if not rows:
-        return (np.full(gx.shape, assumed_rd), np.ones(gx.shape))
+        return (np.full(gx.shape, assumed_rd), np.ones(gx.shape),
+                np.zeros(gx.shape))
     arr = np.asarray(rows, float)
     from scipy.spatial import cKDTree
     _, index = cKDTree(arr[:, :2]).query(np.column_stack([gx.ravel(), gy.ravel()]), k=1)
-    return (arr[index, 2].reshape(gx.shape), arr[index, 3].reshape(gx.shape))
+    return (arr[index, 2].reshape(gx.shape), arr[index, 3].reshape(gx.shape),
+            arr[index, 4].reshape(gx.shape))
 
 
 def _kcmi_compliant_holes(points_frame: pd.DataFrame, intersections: pd.DataFrame,
@@ -331,11 +370,12 @@ def run(models: dict[str, SeamModel], limit_masks: dict[str, np.ndarray],
         alive = limit_masks.get(key)
         if alive is None:
             alive = np.isfinite(model.isopach.z)
-        rd_grid, rd_assumed = _rd_grids(model, intersections, collars, quality,
-                                        assumed, cfg=cfg)
+        rd_grid, rd_assumed, rd_basis = _rd_grids(
+            model, intersections, collars, quality, assumed, cfg=cfg)
         report.estimates.append(estimate_seam(
             key, model, alive, points_frame, intersections, collars, radii,
-            rd_grid, rd_assumed, policy=cfg.poo.two_direction_policy))
+            rd_grid, rd_assumed, rd_basis,
+            policy=cfg.poo.two_direction_policy))
 
     self_check_map(report.estimates, models, limit_masks, points_frame,
                    intersections, collars, radii, report,

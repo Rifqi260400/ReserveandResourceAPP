@@ -340,16 +340,18 @@ def test_the_fallback_cannot_be_chosen_without_a_reason():
                   rd_fallback_when_unconvertible="treat_as_in_situ")
 
 
-def test_every_cell_is_flagged_assumed_under_the_fallback(scene):
-    """RD lab yang diperlakukan in-situ adalah asumsi, dan harus terlihat begitu."""
+def test_the_fallback_flags_the_basis_not_the_value(scene):
+    """RD lab yang diperlakukan in-situ: NILAInya terukur, BASISnya diasumsikan."""
     from coalres import estimate_grid
     models, cfg, topo, dataset = scene
     collars = dataset.collars.set_index("hole_id")
     from coalres.seams import build_intersections_from_dataset, to_frame
     intersections = to_frame(build_intersections_from_dataset(dataset, cfg))
-    _, assumed = estimate_grid._rd_grids(models["B"], intersections, collars,
-                                         dataset.quality, 1.30, cfg=cfg)
-    assert float(assumed.mean()) == 1.0
+    _, no_lab, basis_assumed = estimate_grid._rd_grids(
+        models["B"], intersections, collars, dataset.quality, 1.30, cfg=cfg)
+    # Nilainya terukur di sel yang punya hasil lab; yang diasumsikan basisnya.
+    assert float(basis_assumed.mean()) > 0
+    assert float((no_lab + basis_assumed).mean()) == pytest.approx(1.0)
 
 
 def test_the_conversion_gate_does_not_depend_on_coal_rank(scene):
