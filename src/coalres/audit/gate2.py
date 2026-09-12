@@ -260,12 +260,16 @@ def check_quality_basis(dataset: HoleDataset, cfg: Config, report: AuditReport) 
 
 
 def check_proximate_closure(dataset: HoleDataset, cfg: Config, report: AuditReport) -> None:
-    """M + ASH + VM + FC harus menutup 100%, pada basis apa pun.
+    """M + ASH + VM + FC harus menutup 100%.
 
-    Pemeriksaan ini TIDAK bergantung pada basis. Apa pun jawabannya untuk adb
-    melawan daf, analisis proksimat pada satu basis selalu berjumlah 100%. Bila
-    tidak, salah satu kolom bukan yang tertulis di namanya - dan itu pertanyaan
-    yang harus dijawab lebih dulu daripada pertanyaan basis.
+    KCMI 4.3.3.2 menyatakannya langsung: "Hasil uji proximate analysis (FC, Ash,
+    IM & VM) yang ditampilkan dalam sertifikat Lab perlu menunjukkan angka total
+    100%." Jadi ini bukan tafsiran - ia tuntutan pedoman.
+
+    Pemeriksaannya juga TIDAK bergantung basis. Apa pun jawabannya untuk adb
+    melawan daf, proksimat pada satu basis selalu berjumlah 100%. Bila tidak,
+    salah satu kolom bukan yang tertulis di namanya - dan itu pertanyaan yang
+    harus dijawab lebih dulu daripada pertanyaan basis.
     """
     quality = dataset.quality
     if quality is None:
@@ -304,6 +308,7 @@ def check_proximate_closure(dataset: HoleDataset, cfg: Config, report: AuditRepo
     waiver = cfg.validation.proximate_closure_waiver_basis.strip()
     report.add(
         Severity.WARN if waiver else Severity.STOP, "G7_proximate",
+        f"KCMI 4.3.3.2 menuntut proksimat (FC, Ash, IM, VM) berjumlah 100%. "
         f"{' + '.join(picked.values())} berjumlah median {total.median():.2f}% "
         f"pada {len(total)} sampel, bukan 100% - kekurangan median "
         f"{gap.median():.2f}%. Seluruh {int(off.sum())} sampel meleset, dan "
@@ -317,6 +322,90 @@ def check_proximate_closure(dataset: HoleDataset, cfg: Config, report: AuditRepo
                "ini sintetis dan memang tidak konsisten secara fisik, nyatakan itu "
                "agar tidak dibaca sebagai temuan.",
     )
+
+
+# KCMI 4.3.3.4 menuntut tiga hubungan pada database kualitas. Tandanya
+# ditentukan pedoman; kekuatannya tidak, jadi ambang di bawah ini
+# OPERASIONALISASI KAMI dan dicetak bersama tiap temuan.
+KCMI_RELATIONS = (
+    # (x, y, tanda yang dituntut, uraian pedoman)
+    ("ASH", "CV", "negatif", "CV vs Ash harus berbanding terbalik"),
+    ("TM", "CV", "negatif", "CV vs TM harus berbanding terbalik"),
+    ("ASH", "RD", "positif", "Rd vs Ash harus berbanding lurus"),
+)
+RELATION_WEAK = 0.50
+
+
+def check_quality_relations(dataset: HoleDataset, cfg: Config,
+                            report: AuditReport) -> None:
+    """KCMI 4.3.3.4: hubungan wajib pada database kualitas.
+
+    Pedoman menyebut tiga hubungan yang HARUS muncul. Bila salah satu tidak
+    muncul - atau muncul dengan tanda terbalik - yang keliru bukan batubaranya
+    melainkan penamaan kolom, basis, atau isi databasenya.
+    """
+    quality = dataset.quality
+    if quality is None:
+        return
+
+    aliases = {
+        "ASH": ("ASH", "ASH_adb"), "CV": ("CV", "CV_adb"),
+        "RD": ("RD", "rd_t_per_m3"), "TM": ("TM", "TM_ar", "TOTAL_MOISTURE"),
+    }
+    def column(role: str) -> str | None:
+        return next((c for c in aliases[role] if c in quality.columns), None)
+
+    rows = []
+    for x_role, y_role, expected, wording in KCMI_RELATIONS:
+        x, y = column(x_role), column(y_role)
+        if x is None or y is None:
+            missing = x_role if x is None else y_role
+            rows.append({"hubungan": f"{y_role} vs {x_role}", "dituntut": expected,
+                         "r": float("nan"), "n": 0, "hasil": f"tidak diuji ({missing} tidak ada)"})
+            report.add(
+                Severity.WARN, "G8_kcmi_relations",
+                f"KCMI 4.3.3.4: {wording} - TIDAK DAPAT DIUJI karena kolom "
+                f"'{missing}' tidak ada di database kualitas.",
+                remedy=f"Pasok kolom {missing}, atau nyatakan mengapa tidak tersedia.")
+            continue
+
+        sub = quality[[x, y]].dropna()
+        if len(sub) < MIN_SAMPLES_FOR_CORRELATION:
+            rows.append({"hubungan": f"{y_role} vs {x_role}", "dituntut": expected,
+                         "r": float("nan"), "n": len(sub), "hasil": "sampel kurang"})
+            continue
+
+        r = float(np.corrcoef(sub[x], sub[y])[0, 1])
+        correct_sign = (r < 0) if expected == "negatif" else (r > 0)
+        strong = abs(r) >= RELATION_WEAK
+        verdict = ("sesuai" if correct_sign and strong
+                   else "lemah" if correct_sign
+                   else "TERBALIK")
+        rows.append({"hubungan": f"{y_role} vs {x_role}", "dituntut": expected,
+                     "r": round(r, 4), "n": len(sub), "hasil": verdict})
+
+        if verdict == "TERBALIK":
+            report.add(
+                Severity.STOP, "G8_kcmi_relations",
+                f"KCMI 4.3.3.4: {wording}, tetapi r({x}, {y}) = {r:+.3f} pada "
+                f"{len(sub)} sampel - TANDANYA TERBALIK. Batubara tidak "
+                "berperilaku begitu; yang keliru penamaan kolom, basis, atau isi "
+                "databasenya.",
+                remedy=f"Periksa kolom '{x}' dan '{y}' terhadap sertifikat lab.")
+        elif verdict == "lemah":
+            report.add(
+                Severity.WARN, "G8_kcmi_relations",
+                f"KCMI 4.3.3.4: {wording}. Tandanya benar tetapi lemah - "
+                f"r({x}, {y}) = {r:+.3f} pada {len(sub)} sampel, di bawah "
+                f"{RELATION_WEAK:.2f}. Pedoman menuntut hubungan itu MUNCUL tanpa "
+                "menyebut kekuatannya; ambang ini operasionalisasi kami.",
+                remedy="Konfirmasi basis kolom ke sertifikat lab.")
+        else:
+            report.add(Severity.INFO, "G8_kcmi_relations",
+                       f"KCMI 4.3.3.4: {wording} - terpenuhi, r = {r:+.3f} "
+                       f"pada {len(sub)} sampel.")
+
+    report.tables["kcmi_quality_relations"] = pd.DataFrame(rows)
 
 
 def check_duplicate_records(dataset: HoleDataset, report: AuditReport) -> None:
@@ -555,6 +644,7 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
 def run_gate2(dataset: HoleDataset, cfg: Config, report: AuditReport) -> AuditReport:
     check_seam_collision(dataset, cfg, report)
     check_quality_basis(dataset, cfg, report)
+    check_quality_relations(dataset, cfg, report)
     check_proximate_closure(dataset, cfg, report)
     check_duplicate_records(dataset, report)
     check_weathering(dataset, cfg, report)
