@@ -35,6 +35,9 @@ from .poo import evaluate_areas
 log = get_logger("estimate_grid")
 
 CLASSES = ("terukur", "tertunjuk", "tereka")
+
+# Di bawah ini, grid densitas seam dianggap bertumpu pada terlalu sedikit uji.
+RD_THIN_SUPPORT = 3
 OUTSIDE = "di luar radius"
 LABELS = {"terukur": "Terukur", "tertunjuk": "Tertunjuk", "tereka": "Tereka"}
 
@@ -60,6 +63,10 @@ class SeamEstimate:
     rd_median: float = float("nan")
     rd_min: float = float("nan")
     rd_max: float = float("nan")
+    # Berapa lubang beruji densitas yang menopang seam ini, dan sejauh apa
+    # sel terjauh dari lubang terdekat yang diuji.
+    rd_holes: int = 0
+    rd_max_distance_m: float = float("nan")
     demotions: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
@@ -90,6 +97,9 @@ class EstimateReport:
             row["RD dipakai t/m3 (min-maks)"] = (
                 f"{e.rd_min:.3f}-{e.rd_max:.3f}"
                 if np.isfinite(e.rd_min) else "")
+            row["lubang beruji RD"] = e.rd_holes
+            row["sel terjauh dari uji RD (m)"] = (
+                round(e.rd_max_distance_m) if np.isfinite(e.rd_max_distance_m) else None)
             row["% sel tanpa RD lab"] = round(100 * e.no_lab_rd_fraction, 1)
             row["% sel basis RD diasumsikan"] = round(
                 100 * e.assumed_basis_fraction, 1)
@@ -99,7 +109,8 @@ class EstimateReport:
             total = frame.drop(columns=["seam", "domain"]).sum(numeric_only=True)
             # Rata-rata dan pecahan tidak boleh dijumlahkan.
             for column in ("RD dipakai t/m3 (median)", "% sel tanpa RD lab",
-                           "% sel basis RD diasumsikan"):
+                           "% sel basis RD diasumsikan", "lubang beruji RD",
+                           "sel terjauh dari uji RD (m)"):
                 total[column] = float("nan")
             frame.loc[len(frame)] = {"seam": "TOTAL", "domain": "",
                                      "RD dipakai t/m3 (min-maks)": "", **total}
@@ -148,6 +159,7 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
                   collars: pd.DataFrame, radii: dict[str, float],
                   rd_grid: np.ndarray, rd_assumed: np.ndarray,
                   rd_basis_assumed: np.ndarray | None = None,
+                  rd_support: tuple[int, np.ndarray] | None = None,
                   policy: str = "radius_provides_dip") -> SeamEstimate:
     """Klasifikasikan sel seam ini dan hitung tonasenya."""
     cell = model.roof.spacing ** 2
@@ -195,6 +207,9 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
         no_lab_rd_fraction=float("nan") if empty else float(rd_assumed[live].mean()),
         assumed_basis_fraction=(float("nan") if empty
                                 else float(rd_basis_assumed[live].mean())),
+        rd_holes=0 if rd_support is None else rd_support[0],
+        rd_max_distance_m=(float("nan") if (rd_support is None or empty)
+                           else float(rd_support[1][live].max())),
         rd_median=float("nan") if empty else float(np.median(rd_grid[live])),
         rd_min=float("nan") if empty else float(rd_grid[live].min()),
         rd_max=float("nan") if empty else float(rd_grid[live].max()),
@@ -204,7 +219,7 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
 def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
               collars: pd.DataFrame, quality: pd.DataFrame | None,
               assumed_rd: float, cfg=None
-              ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+              ) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[int, np.ndarray]]:
     """Grid RD IN-SITU dan grid penanda "RD ini asumsi", dari lubang terdekat.
 
     RD laboratorium TIDAK boleh masuk ke perkalian tonase apa adanya. KCMI
@@ -235,12 +250,20 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
                 im = plain
         return tm, im
 
+    # Grid RD dibangun HANYA dari lubang yang punya hasil laboratorium.
+    #
+    # Sebelumnya seluruh lubang seam ikut, dan lubang tanpa hasil membawa
+    # konstanta konfigurasi - sehingga ia MENGHALANGI lubang ber-RD yang hanya
+    # sedikit lebih jauh. Hasilnya, data lab yang ada justru terbuang: pada seam
+    # B, 8 lubang beruji densitas kalah oleh 51 lubang tanpa uji hanya karena
+    # letaknya. Konstanta sekarang dipakai hanya bila seam itu tidak punya satu
+    # pun hasil lab.
     rows = []
     for _, row in intersections[intersections["seam"] == model.seam].iterrows():
         hole = row["hole_id"]
         if hole not in collars.index:
             continue
-        value, is_assumed, basis_assumed = assumed_rd, True, False
+        value, is_assumed, basis_assumed = None, True, False
         if quality is not None:
             match = quality[(quality["hole_id"] == hole)
                             & (quality["seam"] == model.seam)]
@@ -259,6 +282,8 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
                 else:
                     value, is_assumed, _ = resolve_in_situ_rd(
                         lab, basis, tm, im, assumed_rd)
+        if value is None:
+            continue                      # lubang tanpa hasil lab tidak ikut
         collar = collars.loc[hole]
         rows.append((float(collar["east"]), float(collar["north"]), value,
                      1.0 if is_assumed else 0.0,
@@ -266,13 +291,17 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
 
     gx, gy = np.meshgrid(model.roof.x, model.roof.y)
     if not rows:
+        # Seam ini tidak punya SATU PUN hasil lab: konstanta konfigurasi, dan
+        # seluruh selnya ditandai bernilai asumsi.
         return (np.full(gx.shape, assumed_rd), np.ones(gx.shape),
-                np.zeros(gx.shape))
+                np.zeros(gx.shape), (0, np.full(gx.shape, np.inf)))
     arr = np.asarray(rows, float)
     from scipy.spatial import cKDTree
-    _, index = cKDTree(arr[:, :2]).query(np.column_stack([gx.ravel(), gy.ravel()]), k=1)
+    distance, index = cKDTree(arr[:, :2]).query(
+        np.column_stack([gx.ravel(), gy.ravel()]), k=1)
     return (arr[index, 2].reshape(gx.shape), arr[index, 3].reshape(gx.shape),
-            arr[index, 4].reshape(gx.shape))
+            arr[index, 4].reshape(gx.shape),
+            (len(arr), distance.reshape(gx.shape)))
 
 
 def _kcmi_compliant_holes(points_frame: pd.DataFrame, intersections: pd.DataFrame,
@@ -370,11 +399,11 @@ def run(models: dict[str, SeamModel], limit_masks: dict[str, np.ndarray],
         alive = limit_masks.get(key)
         if alive is None:
             alive = np.isfinite(model.isopach.z)
-        rd_grid, rd_assumed, rd_basis = _rd_grids(
+        rd_grid, rd_assumed, rd_basis, rd_support = _rd_grids(
             model, intersections, collars, quality, assumed, cfg=cfg)
         report.estimates.append(estimate_seam(
             key, model, alive, points_frame, intersections, collars, radii,
-            rd_grid, rd_assumed, rd_basis,
+            rd_grid, rd_assumed, rd_basis, rd_support,
             policy=cfg.poo.two_direction_policy))
 
     self_check_map(report.estimates, models, limit_masks, points_frame,
@@ -389,6 +418,14 @@ def run(models: dict[str, SeamModel], limit_masks: dict[str, np.ndarray],
                 f"seam {estimate.seam}: {100 * outside / total:.0f}% tonase berada "
                 "DI LUAR radius kelas mana pun dan dikeluarkan dari pelaporan. "
                 "Sesuai aturan, ia tidak dilipat menjadi Tereka.")
+        if 0 < estimate.rd_holes < RD_THIN_SUPPORT:
+            report.warnings.append(
+                f"seam {estimate.seam}: seluruh grid densitas bertumpu pada "
+                f"{estimate.rd_holes} lubang beruji, dan sel terjauh berada "
+                f"{estimate.rd_max_distance_m:.0f} m dari lubang terdekat yang "
+                "diuji. Densitas menggerakkan tonase secara langsung; sebaran "
+                "setipis ini berarti angka seam ini bergantung pada segelintir "
+                "sampel.")
         for reason, count in estimate.demotions.items():
             report.notes.append(f"seam {estimate.seam}: {count} sel - {reason}.")
         report.notes.extend(f"seam {estimate.seam}: {n}" for n in estimate.notes)

@@ -119,8 +119,8 @@ def test_tonnage_uses_plan_area_times_vertical_thickness(scene):
     estimate = next(e for e in report.estimates if e.seam == "A")
     m = models[estimate.key]
     mask = estimate.klass == "terukur"
-    rd_grid, _, _ = estimate_grid._rd_grids(m, intersections, collars,
-                                            dataset.quality, 1.30, cfg=cfg)
+    rd_grid, *_ = estimate_grid._rd_grids(m, intersections, collars,
+                                          dataset.quality, 1.30, cfg=cfg)
     expected = float(np.nansum(m.isopach.z[mask] * rd_grid[mask])) * estimate.cell_area_m2
     assert estimate.tonnes["terukur"] == pytest.approx(expected)
 
@@ -208,8 +208,44 @@ def test_missing_rd_is_separated_from_assumed_rd_basis(scene):
         # Tiap sel masuk tepat satu kelompok.
         assert estimate.no_lab_rd_fraction + estimate.assumed_basis_fraction \
             == pytest.approx(1.0, abs=1e-6)
-    # Pada data ini sebagian besar sel memang tidak punya RD lab sama sekali.
-    assert min(e.no_lab_rd_fraction for e in report.estimates) > 0.5
+    # Grid RD kini dibangun dari lubang beruji saja, jadi tidak ada sel yang
+    # jatuh ke konstanta selama seam itu punya sedikitnya satu hasil lab.
+    assert all(e.no_lab_rd_fraction == 0.0 for e in report.estimates)
+
+
+def test_the_density_grid_uses_tested_holes_not_the_nearest_hole(scene):
+    """Lubang tanpa uji tidak boleh menghalangi lubang beruji yang lebih jauh.
+
+    Sebelumnya seluruh lubang seam ikut membentuk grid, dan yang tanpa uji
+    membawa konstanta konfigurasi - sehingga 8 lubang beruji pada seam B kalah
+    oleh 51 lubang tanpa uji hanya karena letaknya.
+    """
+    report = _run(scene)
+    for estimate in report.estimates:
+        assert estimate.rd_holes > 0
+        assert estimate.no_lab_rd_fraction == 0.0
+        # Nilai yang dipakai berasal dari rentang hasil lab, bukan 1,30 telanjang.
+        assert estimate.rd_min >= 1.20
+
+
+def test_thin_density_support_is_warned_about(scene):
+    """Seam A1 hanya punya 1 lubang beruji densitas; seluruh tonasenya ikut."""
+    report = _run(scene)
+    a1 = next(e for e in report.estimates if e.seam == "A1")
+    assert a1.rd_holes == 1
+    assert a1.rd_max_distance_m > 1000
+    assert any("bertumpu pada 1 lubang beruji" in w for w in report.warnings)
+
+
+def test_a_seam_with_no_lab_density_falls_back_to_the_constant(scene):
+    """Konstanta dipakai hanya bila seam itu tidak punya satu pun hasil lab."""
+    models, masks, points, intersections, collars, radii, cfg, dataset = scene
+    empty = dataset.quality.iloc[0:0]
+    values, no_lab, _, support = estimate_grid._rd_grids(
+        models["B"], intersections, collars, empty, 1.30, cfg=cfg)
+    assert support[0] == 0
+    assert float(no_lab.mean()) == 1.0
+    assert float(values.mean()) == pytest.approx(1.30)
 
 
 def test_a_totals_row_never_sums_an_average_or_a_fraction(scene):
@@ -217,5 +253,6 @@ def test_a_totals_row_never_sums_an_average_or_a_fraction(scene):
     frame = report.table("Sumberdaya")
     total = frame[frame["seam"] == "TOTAL"].iloc[0]
     for column in ("RD dipakai t/m3 (median)", "% sel tanpa RD lab",
-                   "% sel basis RD diasumsikan"):
+                   "% sel basis RD diasumsikan", "lubang beruji RD",
+                   "sel terjauh dari uji RD (m)"):
         assert pd.isna(total[column]), column

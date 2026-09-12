@@ -347,7 +347,7 @@ def test_the_fallback_flags_the_basis_not_the_value(scene):
     collars = dataset.collars.set_index("hole_id")
     from coalres.seams import build_intersections_from_dataset, to_frame
     intersections = to_frame(build_intersections_from_dataset(dataset, cfg))
-    _, no_lab, basis_assumed = estimate_grid._rd_grids(
+    _, no_lab, basis_assumed, _ = estimate_grid._rd_grids(
         models["B"], intersections, collars, dataset.quality, 1.30, cfg=cfg)
     # Nilainya terukur di sel yang punya hasil lab; yang diasumsikan basisnya.
     assert float(basis_assumed.mean()) > 0
