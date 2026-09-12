@@ -16,21 +16,30 @@ from typing import Literal
 GeologicalCondition = Literal["sederhana", "moderat", "kompleks"]
 ResourceClass = Literal["terukur", "tertunjuk", "tereka"]
 
-# Radius kumulatif dari titik observasi, dalam meter, menurut SNI 5015:2019.
+# Jarak dari titik pengamatan, dalam meter, menurut SNI 5015:2019.
 #
-# PERINGATAN: angka di bawah ini BELUM diverifikasi terhadap teks standar. Ia
-# disalin dari konfigurasi kerja proyek, bukan dari dokumen SNI. Jangan
-# perlakukan sebagai otoritatif sampai diverifikasi.
+# Dicocokkan 2026-09-12 ke Tabel 5-33 laporan Bab V PT SGM, yang mengutip SNI
+# 5015 Tahun 2019. Tabel itu menyatakan pita kumulatif:
+#
+#     Sederhana   Terukur x <= 500    Tertunjuk 500 < x <= 1.000   Tereka 1.000 < x <= 1.500
+#     Moderat     Terukur x <= 250    Tertunjuk 250 < x <=   500   Tereka   500 < x <= 1.000
+#     Kompleks    Terukur x <= 100    Tertunjuk 100 < x <=   250   Tereka   250 < x <=   500
+#
+# Angka di bawah adalah batas ATAS tiap pita. Pencocokan ini MEMPERBAIKI satu
+# kekeliruan: tereka pada kondisi kompleks sebelumnya tertulis 400 m, seharusnya
+# 500 m. Kekeliruan itu MENGECILKAN sumberdaya Tereka pada geologi kompleks -
+# arah yang aman, tapi tetap salah dan tidak bergejala.
 SNI_5015_2019_RADII_M: dict[str, dict[str, float]] = {
     "sederhana": {"terukur": 500.0, "tertunjuk": 1000.0, "tereka": 1500.0},
     "moderat": {"terukur": 250.0, "tertunjuk": 500.0, "tereka": 1000.0},
-    "kompleks": {"terukur": 100.0, "tertunjuk": 200.0, "tereka": 400.0},
+    "kompleks": {"terukur": 100.0, "tertunjuk": 250.0, "tereka": 500.0},
 }
 
 TABLE_UNVERIFIED_WARNING = (
-    "Tabel radius SNI_5015_2019_RADII_M BELUM diverifikasi terhadap teks SNI "
-    "5015:2019. Verifikasi ke dokumen standar sebelum hasil dipakai untuk RKAB "
-    "atau laporan Competent Person."
+    "Tabel radius dicocokkan ke Tabel 5-33 laporan Bab V PT SGM, BUKAN ke teks "
+    "SNI 5015:2019 langsung. Laporan itu sumber sekunder yang mengutip standar. "
+    "Untuk RKAB atau laporan Competent Person, cocokkan sekali lagi ke dokumen "
+    "standar aslinya."
 )
 
 

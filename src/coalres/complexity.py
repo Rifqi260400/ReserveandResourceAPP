@@ -25,6 +25,16 @@ Score = Literal["sederhana", "moderat", "kompleks"]
 SCORES: tuple[Score, ...] = ("sederhana", "moderat", "kompleks")
 JUSTIFICATION_MIN_CHARS = 40
 
+# Penilaian subaspek adalah CEKLIS - satu kolom ditandai, bukan angka diisi.
+# Ordinal di bawah hanya alat hitung internal; ia tidak pernah jadi masukan.
+ORDINAL: dict[Score, int] = {"sederhana": 1, "moderat": 2, "kompleks": 3}
+
+# Batas pita saat nilai rata-rata dikembalikan menjadi kelas.
+BOUNDARIES = (1.5, 2.5)
+
+# Nilai yang jatuh sedekat ini ke batas pita diperlakukan sebagai mendua.
+BOUNDARY_EPSILON = 1e-9
+
 # Formulir Tabel 5-32: kelompok -> parameter -> uraian tiap skor.
 FORM: dict[str, dict[str, dict[Score, str]]] = {
     "sedimentasi": {
@@ -96,16 +106,50 @@ class Assessment:
     suggestions: list[Suggestion] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     tally: dict[Score, int] = field(default_factory=dict)
+    aspect_values: dict[str, float] = field(default_factory=dict)
+    final_value: float = float("nan")
     condition: Score | None = None
-    margin: int = 0
+    margin: float = 0.0
 
     def to_frame(self) -> pd.DataFrame:
         return pd.DataFrame([
-            {"kelompok": e.group, "parameter": e.parameter, "skor": e.score,
+            {"aspek": e.group, "subaspek": e.parameter, "skor": e.score,
              "uraian": FORM[e.group][e.parameter][e.score],
              "sumber": e.source, "justifikasi": e.justification}
             for e in self.entries
         ])
+
+    def to_checklist_frame(self) -> pd.DataFrame:
+        """Bentuk Tabel 5-32: satu kolom diceklis per subaspek."""
+        rows = []
+        for entry in self.entries:
+            row = {"aspek": entry.group, "subaspek": entry.parameter}
+            for score in SCORES:
+                row[score] = "v" if entry.score == score else ""
+            rows.append(row)
+        for group, value in self.aspect_values.items():
+            rows.append({"aspek": group, "subaspek": f"-- rata-rata {group} --",
+                         **{s: "" for s in SCORES},
+                         "nilai": round(value, 3), "kelas": classify(value)})
+        rows.append({"aspek": "", "subaspek": "== rata-rata tiga aspek ==",
+                     **{s: "" for s in SCORES},
+                     "nilai": round(self.final_value, 3),
+                     "kelas": self.condition or ""})
+        return pd.DataFrame(rows)
+
+
+def classify(value: float) -> Score:
+    """Kembalikan nilai rata-rata menjadi kelas."""
+    low, high = BOUNDARIES
+    return "sederhana" if value < low else "moderat" if value < high else "kompleks"
+
+
+def aspect_value(entries: list[Entry], group: str) -> float:
+    """Rata-rata ordinal subaspek dalam satu aspek."""
+    scores = [ORDINAL[e.score] for e in entries if e.group == group]
+    if not scores:
+        raise ValueError(f"aspek '{group}' tidak punya subaspek yang dinilai.")
+    return float(np.mean(scores))
 
 
 def _bucket(value: float, low: float, high: float, *, ascending: bool) -> Score:
@@ -236,46 +280,54 @@ def suggest(dataset, cfg) -> list[Suggestion]:
 def tally_and_warn(entries: list[Entry]) -> Assessment:
     """Hitung kelas akhir dan cetak dua peringatan WAJIB."""
     tally = {score: sum(1 for e in entries if e.score == score) for score in SCORES}
-    ranked = sorted(tally.items(), key=lambda kv: -kv[1])
-    condition = ranked[0][0]
-    margin = ranked[0][1] - ranked[1][1]
+    values = {group: aspect_value(entries, group) for group in FORM}
+    final = float(np.mean(list(values.values())))
 
-    # Seri TIDAK boleh diputus kode. Urutan SCORES kebetulan menaruh
-    # 'sederhana' lebih dulu, sehingga pengurutan stabil akan selalu memilih
-    # kelas dengan radius TERBESAR - arah yang paling murah hati, dan tanpa
-    # gejala apa pun. Yang memutus harus manusia, dengan alasan yang tercatat.
-    if margin == 0:
-        tied = [score for score, count in tally.items() if count == ranked[0][1]]
-        raise TiedAssessment(
-            f"skor seri antara {tied} ({', '.join(f'{s} {tally[s]}' for s in SCORES)}). "
-            "Kode tidak memutus seri: urutan enum akan selalu memenangkan kelas "
-            "dengan radius terbesar, dan itu menaikkan sumberdaya tanpa dasar. "
-            f"Selisih akibatnya nyata - radius terukur {radius_module.radius_m(tied[0], 'terukur'):.0f} m "
-            f"lawan {radius_module.radius_m(tied[-1], 'terukur'):.0f} m. "
-            "Putuskan dengan condition_override beserta alasannya, atau ubah skor "
-            "parameter yang masih dapat dibantah."
-        )
+    # Nilai yang jatuh PERSIS di batas pita mendua. Membulatkannya di dalam kode
+    # berarti memilihkan kelas - dan pembulatan ke bawah selalu memilih kelas
+    # dengan radius lebih besar, arah yang menaikkan sumberdaya tanpa dasar.
+    for boundary in BOUNDARIES:
+        if abs(final - boundary) <= BOUNDARY_EPSILON:
+            below, above = classify(boundary - 1.0), classify(boundary + 1.0)
+            raise TiedAssessment(
+                f"rata-rata tiga aspek jatuh PERSIS di batas pita ({final:.3f}). "
+                f"Kelasnya mendua antara '{below}' dan '{above}', dan kode tidak "
+                "memilihkan: membulatkan ke bawah selalu memenangkan radius yang "
+                "lebih besar. Selisihnya nyata - radius terukur "
+                f"{radius_module.radius_m(below, 'terukur'):.0f} m lawan "
+                f"{radius_module.radius_m(above, 'terukur'):.0f} m. Putuskan "
+                "dengan condition_override beserta alasannya, atau tinjau ulang "
+                "ceklis subaspek yang masih dapat dibantah."
+            )
 
-    sizes = {group: len(params) for group, params in FORM.items()}
-    largest = max(sizes, key=lambda g: sizes[g])
+    condition = classify(final)
+    margin = min(abs(final - boundary) for boundary in BOUNDARIES)
+
+    counts = {group: len(params) for group, params in FORM.items()}
     warnings = [
-        # 1. Bias pembobotan kelompok.
-        f"PERINGATAN WAJIB - bias pembobotan kelompok: parameter tidak terbagi "
-        f"rata antar kelompok ({', '.join(f'{g} {n}' for g, n in sizes.items())}). "
-        f"Menghitung skor tanpa bobot memiringkan hasil ke kelompok '{largest}' "
-        f"yang memuat {sizes[largest]} dari {sum(sizes.values())} parameter. "
-        "Kelas di bawah ini adalah hitungan sederhana, bukan penilaian berbobot.",
+        # 1. Cara pembobotan, dan bedanya dari hitungan mentah di laporan rujukan.
+        "PERINGATAN WAJIB - cara pembobotan: nilai dihitung dua tingkat. "
+        "Subaspek dirata-ratakan menjadi nilai aspek, lalu ketiga aspek "
+        f"dirata-ratakan ({', '.join(f'{g}={values[g]:.3f}' for g in FORM)} "
+        f"-> {final:.3f}). Cara ini memberi bobot SAMA kepada ketiga aspek "
+        f"meski jumlah subaspeknya timpang ({', '.join(f'{g} {n}' for g, n in counts.items())}), "
+        "sehingga Variasi Kualitas yang hanya satu subaspek tetap bernilai "
+        "sepertiga. Perhatikan bahwa Tabel 5-32 pada laporan rujukan justru "
+        "MENJUMLAH ceklis mentah (6 lawan 2); kedua cara itu dapat menghasilkan "
+        "kelas yang berbeda.",
         # 2. Margin tepi jurang.
-        f"PERINGATAN WAJIB - margin tepi jurang: skor "
-        f"{', '.join(f'{s} {tally[s]}' for s in SCORES)}; margin ke kelas "
-        f"terdekat {margin} parameter. Satu parameter yang berubah "
-        + ("TIDAK akan" if margin > 1 else "AKAN")
-        + " membalik kelas. Kelas menggerakkan seluruh radius klasifikasi, jadi "
-        "margin tipis berarti seluruh estimasi bergantung pada satu penilaian.",
+        f"PERINGATAN WAJIB - margin tepi jurang: nilai akhir {final:.3f}, kelas "
+        f"'{condition}', jarak ke batas pita terdekat {margin:.3f}. "
+        + ("Margin ini TIPIS: satu ceklis subaspek yang berubah dapat membalik "
+           "kelas." if margin < 0.2 else
+           "Margin ini cukup lebar terhadap satu perubahan ceklis.")
+        + " Kelas menggerakkan SELURUH radius klasifikasi, jadi tiap ceklis "
+        "subaspek berdampak pada angka sumberdaya akhir.",
     ]
     for line in warnings:
         log.warning(line)
     return Assessment(entries=entries, warnings=warnings, tally=tally,
+                      aspect_values=values, final_value=final,
                       condition=condition, margin=margin)
 
 
@@ -324,9 +376,11 @@ def assess(dataset, cfg, overrides: dict[str, tuple[Score, str]] | None = None,
     except TiedAssessment:
         if condition_override is None:
             raise
+        values = {group: aspect_value(entries, group) for group in FORM}
         assessment = Assessment(
             entries=entries,
-            tally={score: sum(1 for e in entries if e.score == score) for score in SCORES})
+            tally={score: sum(1 for e in entries if e.score == score) for score in SCORES},
+            aspect_values=values, final_value=float(np.mean(list(values.values()))))
     if condition_override is not None:
         chosen, reason = condition_override
         if len(reason.strip()) < JUSTIFICATION_MIN_CHARS:
@@ -345,7 +399,7 @@ def assess(dataset, cfg, overrides: dict[str, tuple[Score, str]] | None = None,
                 f"PERINGATAN WAJIB - seri diputus manusia menjadi '{chosen}'. "
                 f"Alasan: {reason.strip()}")
         assessment.condition = chosen
-        assessment.margin = 0
+        assessment.margin = 0.0
         for line in assessment.warnings[-1:]:
             log.warning(line)
     assessment.suggestions = suggestions
