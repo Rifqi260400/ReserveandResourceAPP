@@ -105,6 +105,13 @@ cutoffs:
 validation:
   collar_vs_topo_tolerance_m: 2.0
   mass_balance_tolerance_pct: 0.5
+  proximate_closure_waiver_basis: 'Data dummy/sintetis - ketidakkonsistenan diketahui dan
+    bukan cacat data lapangan. Diagnostik 2026-09-12: kekurangan median 14,00% tetapi std
+    3,99 dan rentang 3,70-24,00%, jadi BUKAN offset sistematis. Tidak satu pun dari keempat
+    kolom muncul sebagai tersangka tunggal - korelasi ''nilai seharusnya lawan nilai aktual''
+    tertinggi hanya 0,849 (ASH), jauh dari 1,0 yang menandakan satu kolom salah definisi.
+    Kesimpulan: kolom digenerasi independen, tidak saling menutup. Gerbang G7 TETAP AKTIF
+    untuk data produksi; waiver ini hanya berlaku untuk dataset latihan ini.'
 rpeee_constraints:
   max_depth_m: 100.0
   max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji jalur
@@ -151,3 +158,16 @@ observation_point:
     pada dataset ini: titik observasi turun dari 60 menjadi 18 lubang, dan luas Terukur (dijumlahkan
     antar seam) turun dari 500 ha menjadi 365 ha, 27% lebih kecil. Pilihan yang lebih longgar
     - cukup ketebalan - akan menaikkan kelas atas dasar geometri semata dan ditolak.'
+seam_policy:
+  collision_resolution: treat_as_distinct
+  collision_basis: 'Aturan pemilik data 2026-09-12: interburden >10 cm adalah seam berbeda,
+    <10 cm adalah parting. IB A1<->A2 paling tipis 40 cm pada 25 dari 25 lubang, jadi A1 dan
+    A2 seam berbeda - merge_children gugur karena akan menelan parting median 3,40 m. A, A1,
+    dan A2 dilaporkan sebagai tiga seam terpisah yang berbagi SATU tesselasi per unit stratigrafi,
+    sehingga tidak ada hitung ganda: tiap sel Voronoi hanya milik satu lubang, dan tiap lubang
+    hanya melog salah satu pola. TERSISA sebagai asumsi yang wajib dilaporkan: 23 lubang ber-''A''
+    dilog satu interval tanpa struktur internal, tebal median 14,49 m. Itu mendekati envelope
+    A1+parting+A2 (14,19 m) ketimbang batubara bersih A1+A2 (10,79 m), sehingga ''A'' DIDUGA
+    memuat parting ~3,4 m yang belum dikurangkan. Dugaan ini tidak konklusif - median tidak
+    berpasangan. Keluaran wajib melaporkan tonase seam A dua versi: as-logged dan dikurangi
+    parting.'
