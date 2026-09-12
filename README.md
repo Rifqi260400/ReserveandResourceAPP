@@ -2,6 +2,9 @@
 
 ## Menjalankan antarmuka
 
+Diuji pada Python 3.11. Python 3.10 ke atas disarankan; 3.9 berjalan tetapi
+menuntut `eval_type_backport`, yang sudah masuk `requirements.txt`.
+
 ```bash
 pip install -r requirements.txt
 PYTHONPATH=src python3 -m coalres.cli ui --config config/minex_dummy.yaml
