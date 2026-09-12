@@ -328,6 +328,32 @@ class Limits(_Strict):
     apply_subcrop: bool = True
 
 
+class ComplexityInput(_Strict):
+    """Ceklis subaspek yang dinyatakan manusia (Tabel 5-32).
+
+    Parameter yang TIDAK dapat dinilai dari data - intrusi, misalnya, karena
+    berkas litologi hanya memuat interval seam - wajib ada di sini. Program
+    tidak memberi nilai bawaan: memberi bawaan berarti menebak kondisi geologi,
+    dan kondisi geologi menggerakkan seluruh radius klasifikasi.
+    """
+
+    # {parameter: [skor, justifikasi]}
+    scores: dict[str, list[str]] = Field(default_factory=dict)
+    # Penimpaan kelas akhir, mis. untuk memutus nilai yang jatuh tepat di batas.
+    condition_override: str = ""
+    condition_override_basis: str = ""
+
+    def as_overrides(self) -> dict[str, tuple[str, str]]:
+        return {key: (value[0], value[1]) for key, value in self.scores.items()
+                if len(value) >= 2}
+
+    def as_condition_override(self) -> tuple[str, str] | None:
+        if not self.condition_override.strip():
+            return None
+        return (self.condition_override.strip(),
+                self.condition_override_basis.strip())
+
+
 class PoOSpec(_Strict):
     """Kriteria Titik Pengamatan menurut Pedoman Praktis KCMI 2017 pasal 4.5.2.
 
@@ -520,6 +546,7 @@ class Config(_Strict):
     weathering: WeatheringSpec = Field(default_factory=WeatheringSpec)
     observation_point: ObservationPointSpec = Field(default_factory=ObservationPointSpec)
     poo: PoOSpec = Field(default_factory=PoOSpec)
+    complexity_input: ComplexityInput = Field(default_factory=ComplexityInput)
     limits: Limits = Field(default_factory=Limits)
 
     classification_radii_m: RadiiTable

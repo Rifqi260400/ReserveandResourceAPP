@@ -140,11 +140,30 @@ def cmd_run(args) -> int:
 
 
 def cmd_ui(args) -> int:
-    from .webui import serve
+    """UI Streamlit menggantikan webui FastAPI yang lama."""
+    return _launch_streamlit(str(args.config), args.port)
 
-    serve(host=args.host, port=args.port,
-          config=str(args.config) if args.config else None)
-    return 0
+
+def _launch_streamlit(config: str, port: int) -> int:
+    """Jalankan UI Streamlit dengan src/ di PYTHONPATH.
+
+    Dijalankan lewat subprocess karena streamlit memuat berkas aplikasi sebagai
+    skrip tingkat atas; menjalankannya dari sini menjaga jalur impor tetap benar
+    tanpa menuntut pengguna menyetel PYTHONPATH sendiri.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    app = Path(__file__).resolve().parent / "ui" / "app.py"
+    src = str(Path(__file__).resolve().parents[1])
+    env = {**os.environ,
+           "PYTHONPATH": src + os.pathsep + os.environ.get("PYTHONPATH", ""),
+           "COALRES_CONFIG": config}
+    return subprocess.call(
+        [sys.executable, "-m", "streamlit", "run", str(app),
+         "--server.port", str(port), "--server.address", "127.0.0.1"], env=env)
 
 
 def main(argv: list[str] | None = None) -> int:

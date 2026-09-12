@@ -1,0 +1,231 @@
+# FIXTURE DEMO - BUKAN PERNYATAAN PEMILIK IZIN.
+# Nilai ini ada semata agar seluruh 11 tahap dapat dijalankan sampai ujung pada dataset latihan.
+# Gerbang yang sama pada config/minex_dummy.yaml sengaja dibiarkan TERBUKA.
+paths:
+  workbook_dir: data/minex
+  las_dir: null
+  quality_table: null
+  topography_dxf: null
+  output_dir: output/demo
+input_format: minex_flat
+minex:
+  survey_file: data/minex/surv.txt
+  lithology_file: data/minex/lit.txt
+  quality_file: data/minex/qual.txt
+  topography_file: data/minex/topo.dat
+  faults_file: data/minex/faults01.dat
+  survey_columns:
+  - hole_id
+  - east
+  - north
+  - rl
+  - total_depth
+  lithology_columns:
+  - hole_id
+  - seam
+  - depth_from
+  - depth_to
+  - code
+  quality_columns:
+  - hole_id
+  - seam
+  - depth_from
+  - depth_to
+  - RD
+  - MOISTURE
+  - ASH
+  - VM
+  - FC
+  - TS
+  - CV
+  fault_columns:
+  - name
+  - east
+  - north
+  - z
+  - f5
+  - f6
+  - f7
+  - f8
+  - f9
+  - f10
+  marker_seams:
+  - W
+  quality_rd_basis: in_situ
+  quality_moisture_basis: unknown
+  quality_cv_unit: kcal/kg
+  on_invalid_quality_interval: exclude
+  quality_column_basis:
+    RD: adb
+    MOISTURE: adb
+    ASH: adb
+    VM: adb
+    FC: adb
+    TS: adb
+    CV: adb
+  quality_basis_override_basis: 'Dinyatakan pemilik data pada 2026-09-12 setelah melihat bukti
+    korelasi: kolom 11 adalah CV basis adb. Bukti yang bertentangan tetap dicatat dan ikut
+    ke keluaran: r(ASH,CV) = -0,200 apa adanya sedangkan -0,867 setelah diperlakukan daf;
+    dan bila adb, CV daf tersirat mencapai 12.864 kcal/kg pada 2 sampel, di atas batas fisik
+    batubara. Catatan: uji basis ini bertumpu pada faktor (100-M-ASH)/100, sedangkan proksimat
+    pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
+    diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
+  seam_aliases: {}
+authoritative_coordinate_source: collar_ts
+coal_thickness_source: lithology
+core_loss_treatment: as_coal
+stratigraphy:
+- A
+- B
+seam_splits:
+  A:
+  - A1
+  - A2
+geological_condition: moderat
+geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan
+  dataset dummy dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
+  menerus di 59 dari 60 lubang, seam A terpecah menjadi A1 dan A2 pada sebagian area, dan
+  terdapat satu jejak sesar (faults01). Penilaian sebenarnya wajib menguraikan kontinuitas
+  seam antar lubang, throw dan rapat sesar, variasi ketebalan lateral, serta besaran dan keseragaman
+  dip, dengan bukti penampang.'
+classification_radii_m:
+  sederhana:
+    measured: 500
+    indicated: 1000
+    inferred: 1500
+  moderat:
+    measured: 250
+    indicated: 500
+    inferred: 1000
+  kompleks:
+    measured: 100
+    indicated: 200
+    inferred: 400
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.1
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+validation:
+  collar_vs_topo_tolerance_m: 2.0
+  mass_balance_tolerance_pct: 0.5
+  proximate_closure_waiver_basis: 'Data dummy/sintetis - ketidakkonsistenan diketahui dan
+    bukan cacat data lapangan. Diagnostik 2026-09-12: kekurangan median 14,00% tetapi std
+    3,99 dan rentang 3,70-24,00%, jadi BUKAN offset sistematis. Tidak satu pun dari keempat
+    kolom muncul sebagai tersangka tunggal - korelasi ''nilai seharusnya lawan nilai aktual''
+    tertinggi hanya 0,849 (ASH), jauh dari 1,0 yang menandakan satu kolom salah definisi.
+    Kesimpulan: kolom digenerasi independen, tidak saling menutup. Gerbang G7 TETAP AKTIF
+    untuk data produksi; waiver ini hanya berlaku untuk dataset latihan ini.'
+rpeee_constraints:
+  max_depth_m: null
+  max_depth_basis: ''
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ''
+  excluded_area_basis: ''
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true
+  dxf_export:
+    enabled: true
+    contour_interval_m: 2.0
+    index_every: 5
+    layer_template: Seam {seam} {surface}
+    index_suffix: ' Index'
+    per_seam_files: true
+    include_boreholes: true
+    include_subcrop: true
+    clip_to_subcrop: true
+    per_surface_files: true
+estimation_method: circular
+block_boundary_wkt: ''
+assumed_rd_t_per_m3: 1.3
+weathering:
+  marker_seam: W
+  provenance: assumed
+  provenance_basis: 'Dinyatakan asumsi oleh pemilik data pada 2026-09-12. Dasar dari data:
+    kedalaman 3,00 m berulang pada 54 dari 60 lubang (90%), sisanya 2,0 m (3 lubang), 2,5
+    m (2) dan 4,0 m (1). Sebaran terpusat pada satu nilai adalah ciri konstanta yang diketikkan,
+    bukan pembacaan log per lubang. Angka ini WAJIB tampil sebagai asumsi pemodelan pada setiap
+    keluaran, bukan sebagai data terukur. Sebagai pembanding, laporan Bab 5 PT SGM menetapkan
+    tebal zona pelapukan rata-rata 3,5 m dari analisa log bor dan log geofisika - provenance
+    semacam itulah yang belum ada di sini.'
+  constant_depth_m: 3.0
+observation_point:
+  requires_quality: true
+  basis: 'Dinyatakan pemilik data pada 2026-09-12. SNI 5015:2019 menuntut ketebalan DAN kualitas
+    pada titik observasi, sehingga lubang tanpa data kualitas tidak menaikkan kelas. Konsekuensi
+    pada dataset ini: titik observasi turun dari 60 menjadi 18 lubang, dan luas Terukur (dijumlahkan
+    antar seam) turun dari 500 ha menjadi 365 ha, 27% lebih kecil. Pilihan yang lebih longgar
+    - cukup ketebalan - akan menaikkan kelas atas dasar geometri semata dan ditolak.'
+seam_policy:
+  collision_resolution: treat_as_distinct
+  collision_basis: 'Dinyatakan pemilik data 2026-09-12 setelah memeriksa berkas kualitas:
+    A, A1 dan A2 dilaporkan sebagai TIGA seam terpisah sesuai penamaan di berkas. Penamaan
+    ulang A->A1 yang sempat dipakai DIBATALKAN. Konsekuensi yang ditangani kode, bukan diabaikan:
+    A hadir di 23 lubang dan A1/A2 di 30 lubang tanpa satu pun lubang memuat keduanya, dan
+    hull keduanya bertumpang 94,8 ha. Ketiganya karena itu tetap didaftarkan sebagai SATU
+    unit stratigrafi lewat seam_splits, sehingga alokasi luas memakai satu tesselasi bersama
+    dan tidak ada tanah yang diklaim dua kali - meski ketiganya dilaporkan dengan namanya
+    masing-masing. PERINGATAN: pada metode circular, lingkaran seam A dan seam A1 SALING BERTUMPANG
+    di bidang datar, berbeda dari Voronoi yang selnya tidak pernah bertumpang. Penjumlahan
+    tonase lintas seam pada unit yang sama WAJIB melewati pemeriksaan tumpang tindih bidang
+    datar.'
+poo:
+  survey_method: null
+  all_holes_full_cored: null
+  hole_types: null
+  all_holes_geophysically_logged: null
+  geophysically_logged_holes: []
+  min_coal_recovery_pct: null
+  spacing_method: otomatis
+  geostatistics_min_data: 30
+  two_direction_policy: radius_provides_dip
+  two_direction_basis: 'Dinyatakan pemilik data 2026-09-12. KCMI 4.5.5 menuntut ''kemenerusan
+    pada dua arah'' tanpa memberi angka, dan 4.5.4 menyebut geometri ''2 titik searah crop
+    line, 1 titik ke arah down dip''. Pembacaan yang dipakai: titik boleh berjajar searah
+    strike, karena jangkauan arah dip datang dari RADIUS kelas itu sendiri - cakram menyapu
+    ke segala arah, sehingga klaim 250 m searah strike sama dengan klaim 250 m searah dip.
+    Didukung geometri endapan: seluruh lintasan titik pengamatan pada data ini menyimpang
+    0,2-4,1 derajat dari strike, dan dip seam seragam sekitar 9,6 derajat. TEGANGAN YANG DICATAT:
+    bunyi harfiah 4.5.4 menuntut satu titik FISIK ke arah down dip, dan pembacaan ini tidak
+    menuntut itu. Pembacaan harfiah tersedia lewat two_direction_policy=''require_offset_point'',
+    dan pada data ini ia menurunkan total yang dilaporkan dari sekitar 26 juta ton menjadi
+    8,2 juta ton.'
+limits:
+  depth:
+    max_depth_m: null
+    basis_kind: null
+    basis_note: ''
+    no_depth_limit_basis: 'Dinyatakan pemilik data 2026-09-12: batas kedalaman tidak diterapkan.
+      KCMI 4.6.3.2 menulis CPI ''dapat menggunakan'' acuan kedalaman, bukan wajib, dan klasifikasi
+      SNI/KCMI bersandar pada jarak dari titik pengamatan di bidang X-Y - bukan pada kedalaman.
+      Keprospekan beralasan ditunjukkan oleh kedalaman roof yang teramati sendiri: seluruh
+      sel model berada pada 123 m atau kurang di bawah topografi (median 38-58 m per seam,
+      maksimum 123,1 m pada seam B), yang berada dalam jangkauan tambang terbuka. Batas 100
+      m yang sempat dipakai hanya menggeser tonase 1,16 juta ton dari 33,33 juta ton, yaitu
+      3,5%.'
+  legal:
+    permit_type: IUP
+    permit_valid_until: '2035-12-31'
+    permit_covers_mine_life: true
+    cnc_certified: true
+    exploration_in_forest_area: false
+    ippkh_exploration_held: null
+  land:
+    forest_category: APL
+    prohibited_area_wkt: ''
+    prohibited_area_basis: ''
+    rtrw_allows_mining: true
+    rtrw_basis: FIXTURE DEMO - BUKAN PERNYATAAN PEMILIK IZIN. Nilai ini ada semata agar seluruh
+      11 tahap dapat dijalankan sampai ujung pada dataset latihan. Gerbang yang sama pada
+      config/minex_dummy.yaml sengaja dibiarkan TERBUKA.
+complexity_input:
+  scores:
+    intrusi:
+    - sederhana
+    - Tidak ada indikasi batuan beku pada seluruh 60 lubang maupun pada peta geologi regional
+      area ini.
+  condition_override: ''
+  condition_override_basis: ''
