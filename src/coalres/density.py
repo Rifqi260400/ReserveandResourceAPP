@@ -132,6 +132,26 @@ def resolve_in_situ_rd(
         if rd_basis == "in_situ":
             return float(rd_value), False, f"RD {rd_value:.3f} t/m3 (basis in_situ, dipakai apa adanya)"
         if rd_basis in {"air_dried", "as_received"}:
+            missing = [name for name, value in
+                       (("TM (as-received)", total_moisture_ar_pct),
+                        ("IM (air-dried)", inherent_moisture_adb_pct))
+                       if value is None or not np.isfinite(value)]
+            if missing:
+                raise MissingDataError(
+                    f"RD berbasis '{rd_basis}' WAJIB dikonversi ke in-situ "
+                    "(KCMI 4.6.3.1), tetapi Preston & Sanders menuntut TM dan "
+                    f"IM - yang hilang: {', '.join(missing)}. Memakai RD lab apa "
+                    "adanya MELEBIHKAN tonase: pada data ini 1% sampai 10% "
+                    "tergantung TM. Tidak ada nilai bawaan untuk TM; ia harus "
+                    "dipasok, bukan ditebak."
+                )
+            if total_moisture_ar_pct <= inherent_moisture_adb_pct:
+                raise MissingDataError(
+                    f"TM {total_moisture_ar_pct:.2f}% tidak lebih besar dari IM "
+                    f"{inherent_moisture_adb_pct:.2f}%. Air-dried berarti "
+                    "sebagian air sudah hilang, jadi TM SELALU >= IM; nilai ini "
+                    "menandakan salah satu kolom bukan yang tertulis di namanya."
+                )
             converted = preston_sanders_insitu_ard(
                 rd_value, total_moisture_ar_pct, inherent_moisture_adb_pct
             )

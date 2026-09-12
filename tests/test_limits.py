@@ -31,6 +31,21 @@ def scene():
     return models, cfg, topo, dataset
 
 
+def _stopping(cfg):
+    """Konfigurasi tanpa fallback: RD yang tidak dapat dikonversi menghentikan."""
+    return cfg.model_copy(update={"minex": cfg.minex.model_copy(
+        update={"rd_fallback_when_unconvertible": "stop", "rd_fallback_basis": ""})})
+
+
+def _with_tm(dataset, tm: float = 25.0):
+    """Kualitas dengan kolom TM, supaya gerbang densitas tidak ikut menyala.
+
+    Uji legal dan lahan harus menguji legal dan lahan saja; membiarkan gerbang
+    densitas menyala di dalamnya membuat kegagalannya tidak dapat dibaca.
+    """
+    return dataset.quality.assign(TM=tm)
+
+
 def _declared(cfg, **land):
     legal = cfg.limits.legal.model_copy(update={
         "permit_type": "IUP", "permit_covers_mine_life": True})
@@ -50,7 +65,7 @@ def test_undeclared_legal_status_does_not_block_the_estimate(scene):
     dinyatakan dicatat sebagai kesiapan pelaporan, bukan penggugur.
     """
     models, cfg, topo, dataset = scene
-    report = limits.run(models, cfg, topo=topo, quality=dataset.quality)
+    report = limits.run(models, cfg, topo=topo, quality=_with_tm(dataset))
     assert report.reportable
     assert report.blockers == []
     assert len(report.readiness) >= 3
@@ -72,14 +87,14 @@ def test_protected_forest_cannot_be_reported_at_all(scene):
 def test_production_forest_records_the_ippkh_requirement(scene):
     models, cfg, topo, dataset = scene
     variant = _declared(cfg, forest_category="hutan_produksi")
-    report = limits.run(models, variant, topo=topo, quality=dataset.quality)
+    report = limits.run(models, variant, topo=topo, quality=_with_tm(dataset))
     assert report.reportable
     assert any("IPPKH" in r for r in report.readiness)
 
     with_permit = variant.model_copy(update={"limits": variant.limits.model_copy(
         update={"legal": variant.limits.legal.model_copy(
             update={"ippkh_exploration_held": True})})})
-    report2 = limits.run(models, with_permit, topo=topo, quality=dataset.quality)
+    report2 = limits.run(models, with_permit, topo=topo, quality=_with_tm(dataset))
     assert not any("IPPKH" in r for r in report2.readiness)
 
 
@@ -89,7 +104,7 @@ def test_a_permit_not_covering_mine_life_warns_but_still_counts(scene):
     variant = variant.model_copy(update={"limits": variant.limits.model_copy(
         update={"legal": variant.limits.legal.model_copy(
             update={"permit_covers_mine_life": False})})})
-    report = limits.run(models, variant, topo=topo, quality=dataset.quality)
+    report = limits.run(models, variant, topo=topo, quality=_with_tm(dataset))
     assert report.reportable
     assert any("umur tambang" in w for w in report.warnings)
 
@@ -104,7 +119,7 @@ def test_rtrw_refusal_still_blocks(scene):
 
 def test_fully_declared_status_clears_everything(scene):
     models, cfg, topo, dataset = scene
-    report = limits.run(models, _declared(cfg), topo=topo, quality=dataset.quality)
+    report = limits.run(models, _declared(cfg), topo=topo, quality=_with_tm(dataset))
     assert report.reportable, report.blockers
     assert report.reporting_ready, report.readiness
 
@@ -112,30 +127,31 @@ def test_fully_declared_status_clears_everything(scene):
 def test_only_a_declared_prohibition_stops_reporting(scene):
     """Garisnya: fakta terlarang yang DINYATAKAN menghentikan; data kosong tidak."""
     models, cfg, topo, dataset = scene
-    unknown = limits.run(models, cfg, topo=topo, quality=dataset.quality)
+    unknown = limits.run(models, cfg, topo=topo, quality=_with_tm(dataset))
     declared_bad = limits.run(models, _declared(cfg, forest_category="hutan_lindung"),
-                              topo=topo, quality=dataset.quality)
+                              topo=topo, quality=_with_tm(dataset))
     assert unknown.reportable and not unknown.reporting_ready
     assert not declared_bad.reportable
 
 
 # --- 4.6.3.1 aturan RD ------------------------------------------------------
 
-def test_low_rank_coal_with_lab_density_is_blocked(scene):
-    """KCMI 4.6.3.1: peringkat rendah WAJIB RD in-situ Preston & Sanders."""
+def test_low_rank_coal_with_unconvertible_lab_density_is_blocked(scene):
+    """KCMI 4.6.3.1: RD laboratorium wajib dikonversi sebelum jadi tonase."""
     models, cfg, topo, dataset = scene
-    variant = _declared(cfg).model_copy(update={
-        "minex": cfg.minex.model_copy(update={"quality_rd_basis": "air_dried"})})
-    quality = pd.DataFrame({"CV": [4500.0] * 20})
     report = limits.LimitsReport()
-    limits.check_density_rule(quality, variant, report)
-    assert any("MEWAJIBKAN RD in-situ" in b for b in report.blockers)
+    limits.check_density_rule(pd.DataFrame({"CV": [4500.0] * 20, "RD": [1.35] * 20}),
+                              _stopping(cfg), report)
+    assert any("Preston & Sanders" in b for b in report.blockers)
 
 
 def test_declared_in_situ_density_is_noted_not_blocked(scene):
+    """Bila penyedia data memang sudah mengonversi, tidak ada yang dihitung ulang."""
     models, cfg, topo, dataset = scene
+    already = cfg.model_copy(update={
+        "minex": cfg.minex.model_copy(update={"quality_rd_basis": "in_situ"})})
     report = limits.LimitsReport()
-    limits.check_density_rule(pd.DataFrame({"CV": [4500.0] * 20}), cfg, report)
+    limits.check_density_rule(pd.DataFrame({"CV": [4500.0] * 20}), already, report)
     assert not report.blockers
     assert any("bertumpu sepenuhnya pada pernyataan" in n for n in report.notes)
 
@@ -281,3 +297,93 @@ def test_declining_a_depth_limit_still_demands_a_reason():
     from coalres.config import DepthLimit
     with pytest.raises(ValueError, match="terlalu pendek"):
         DepthLimit(no_depth_limit_basis="tidak perlu")
+
+
+# --- 4.6.3.1 konversi RD in-situ -------------------------------------------
+
+def test_lab_density_without_tm_cannot_be_converted(scene):
+    """RD laboratorium WAJIB dikonversi; tanpa TM ia tidak dapat dikonversi.
+
+    Memakai RD lab apa adanya melebihkan tonase karena air yang menguap di lab
+    tetap ada di dalam tanah.
+    """
+    models, cfg, topo, dataset = scene
+    report = limits.LimitsReport()
+    limits.check_density_rule(dataset.quality, _stopping(cfg), report)
+    assert cfg.minex.quality_rd_basis == "air_dried"
+    assert any("TM (as-received)" in b for b in report.blockers)
+    assert not report.reportable
+
+
+def test_the_declared_fallback_treats_lab_density_as_in_situ(scene):
+    """Keputusan pemilik data ketika TM dan IM memang tidak ada.
+
+    Dihormati, tetapi tidak pernah diam: ia dicatat sebagai asumsi yang
+    diketahui MELEBIHKAN tonase, beserta besarannya.
+    """
+    models, cfg, topo, dataset = scene
+    assert cfg.minex.rd_fallback_when_unconvertible == "treat_as_in_situ"
+    report = limits.LimitsReport()
+    limits.check_density_rule(dataset.quality, cfg, report)
+    assert report.blockers == []
+    note = next(n for n in report.notes if "4.6.3.1" in n)
+    assert "ASUMSI" in note and "MELEBIHKAN" in note
+
+
+def test_the_fallback_cannot_be_chosen_without_a_reason():
+    """Melebihkan tonase atas keputusan sendiri menuntut alasan tercatat."""
+    from coalres.config import MinexSpec
+    with pytest.raises(ValueError, match="rd_fallback_basis"):
+        MinexSpec(survey_file="a", lithology_file="b",
+                  survey_columns=["hole_id", "east", "north", "rl"],
+                  lithology_columns=["hole_id", "seam", "depth_from", "depth_to"],
+                  rd_fallback_when_unconvertible="treat_as_in_situ")
+
+
+def test_every_cell_is_flagged_assumed_under_the_fallback(scene):
+    """RD lab yang diperlakukan in-situ adalah asumsi, dan harus terlihat begitu."""
+    from coalres import estimate_grid
+    models, cfg, topo, dataset = scene
+    collars = dataset.collars.set_index("hole_id")
+    from coalres.seams import build_intersections_from_dataset, to_frame
+    intersections = to_frame(build_intersections_from_dataset(dataset, cfg))
+    _, assumed = estimate_grid._rd_grids(models["B"], intersections, collars,
+                                         dataset.quality, 1.30, cfg=cfg)
+    assert float(assumed.mean()) == 1.0
+
+
+def test_the_conversion_gate_does_not_depend_on_coal_rank(scene):
+    """Peringkat hanya mengatur seberapa keras pedoman menuntut.
+
+    Memakai RD laboratorium untuk tonase salah pada peringkat mana pun; CV
+    median data ini 6.328 kcal/kg, di ATAS ambang peringkat rendah, dan
+    gerbangnya tetap menyala.
+    """
+    models, cfg, topo, dataset = scene
+    assert float(dataset.quality["CV"].median()) > limits.LOW_RANK_CV_ADB
+    report = limits.LimitsReport()
+    limits.check_density_rule(dataset.quality, _stopping(cfg), report)
+    assert report.blockers
+
+
+def test_supplying_tm_converts_and_lowers_the_density(scene):
+    """Arah koreksinya satu arah: RD in-situ SELALU lebih rendah dari air-dried."""
+    from coalres.density import preston_sanders_insitu_ard
+    models, cfg, topo, dataset = scene
+    quality = dataset.quality.assign(TM=25.0)
+    report = limits.LimitsReport()
+    limits.check_density_rule(quality, cfg, report)
+    assert not report.blockers
+    lab = float(dataset.quality["RD"].median())
+    converted = preston_sanders_insitu_ard(lab, 25.0,
+                                           float(dataset.quality["MOISTURE"].median()))
+    assert converted < lab
+    assert 0.94 < converted / lab < 0.96      # sekitar 5-6% lebih rendah
+
+
+def test_tm_below_im_is_refused():
+    """Air-dried berarti sebagian air sudah hilang, jadi TM selalu >= IM."""
+    from coalres.density import resolve_in_situ_rd
+    from coalres.errors import MissingDataError
+    with pytest.raises(MissingDataError, match="tidak lebih besar dari IM"):
+        resolve_in_situ_rd(1.31, "air_dried", 4.0, 6.5, None)

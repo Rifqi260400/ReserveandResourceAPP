@@ -48,8 +48,8 @@ minex:
   - f10
   marker_seams:
   - W
-  quality_rd_basis: in_situ
-  quality_moisture_basis: unknown
+  quality_rd_basis: air_dried
+  quality_moisture_basis: adb
   quality_cv_unit: kcal/kg
   on_invalid_quality_interval: exclude
   quality_column_basis:
@@ -60,14 +60,20 @@ minex:
     FC: adb
     TS: adb
     CV: adb
-  quality_basis_override_basis: 'Dinyatakan pemilik data pada 2026-09-12 setelah melihat bukti
-    korelasi: kolom 11 adalah CV basis adb. Bukti yang bertentangan tetap dicatat dan ikut
-    ke keluaran: r(ASH,CV) = -0,200 apa adanya sedangkan -0,867 setelah diperlakukan daf;
-    dan bila adb, CV daf tersirat mencapai 12.864 kcal/kg pada 2 sampel, di atas batas fisik
-    batubara. Catatan: uji basis ini bertumpu pada faktor (100-M-ASH)/100, sedangkan proksimat
-    pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
-    diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
+  quality_basis_override_basis: 'Dinyatakan pemilik data 2026-09-12: kolom RD adalah RD LABORATORIUM
+    dan BELUM dikonversi Preston & Sanders. Karena batubara ini peringkat rendah (CV median
+    di bawah 6.100 kcal/kg), KCMI 4.6.3.1 MEWAJIBKAN konversi ke RD in-situ sebelum dipakai
+    menghitung tonase. Konversi menuntut TM (as-received) dan IM (air-dried); kolom MOISTURE
+    dinyatakan adb sehingga ia IM, tetapi kolom TM TIDAK ADA di berkas kualitas. Selama TM
+    belum dipasok, tonase tidak dapat dihitung dari RD lab. Sensitivitas terukur: TM 10% menurunkan
+    tonase 1,1%; TM 20% menurunkan 4,2%; TM 30% menurunkan 7,2%; TM 40% menurunkan 10,0%.'
   seam_aliases: {}
+  rd_fallback_when_unconvertible: treat_as_in_situ
+  rd_fallback_basis: 'Dinyatakan pemilik data 2026-09-12: kolom TM dan IM tidak tersedia di
+    berkas kualitas, jadi RD laboratorium diperlakukan sebagai RD in-situ. Ini ASUMSI yang
+    diketahui MELEBIHKAN tonase, bukan pengukuran. Besarnya terukur pada data ini: 1,1% bila
+    TM sebenarnya 10%; 4,2% bila TM 20%; 7,2% bila TM 30%; 10,0% bila TM 40%. Begitu kolom
+    TM tersedia, setel kembali ke ''stop'' agar konversi Preston & Sanders berjalan.'
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
 core_loss_treatment: as_coal

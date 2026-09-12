@@ -25,6 +25,7 @@ STAGE_NAMES = {
     "5_validasi": "Tahap 5 - Validasi model",
     "9_batas": "Tahap 9 - Batas pelaporan (KCMI 4.6)",
     "7_kompleksitas": "Tahap 7 - Pembobotan kompleksitas geologi",
+    "10_densitas": "Tahap 10 - Konversi densitas in-situ (KCMI 4.6.3.1)",
     "10_swauji": "Tahap 10 - Swauji peta",
 }
 

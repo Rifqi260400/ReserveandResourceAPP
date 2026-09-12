@@ -169,8 +169,37 @@ def estimate_seam(key: str, model: SeamModel, alive: np.ndarray,
 
 def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
               collars: pd.DataFrame, quality: pd.DataFrame | None,
-              assumed_rd: float) -> tuple[np.ndarray, np.ndarray]:
-    """Grid RD dan grid penanda "RD ini asumsi", keduanya dari lubang terdekat."""
+              assumed_rd: float, cfg=None) -> tuple[np.ndarray, np.ndarray]:
+    """Grid RD IN-SITU dan grid penanda "RD ini asumsi", dari lubang terdekat.
+
+    RD laboratorium TIDAK boleh masuk ke perkalian tonase apa adanya. KCMI
+    4.6.3.1 mewajibkan RD in-situ hasil konversi Preston & Sanders untuk
+    batubara peringkat rendah, dan arah koreksinya satu arah: RD in-situ lebih
+    RENDAH daripada RD air-dried, sehingga memakai RD lab melebihkan tonase.
+    """
+    from .density import resolve_in_situ_rd
+
+    basis = cfg.minex.quality_rd_basis if (cfg and cfg.minex) else "in_situ"
+    moisture_basis = (cfg.minex.quality_moisture_basis
+                      if (cfg and cfg.minex) else "unknown")
+
+    def _moisture(match: pd.DataFrame) -> tuple[float | None, float | None]:
+        """Kembalikan (TM ar, IM adb) dari kolom yang tersedia."""
+        def column(*names):
+            for name in names:
+                if name in match.columns and match[name].notna().any():
+                    return float(match[name].mean())
+            return None
+        tm = column("TM", "TM_ar", "TOTAL_MOISTURE")
+        im = column("IM", "M_adb", "IM_adb")
+        plain = column("MOISTURE")
+        if plain is not None:
+            if moisture_basis == "ar" and tm is None:
+                tm = plain
+            elif moisture_basis == "adb" and im is None:
+                im = plain
+        return tm, im
+
     rows = []
     for _, row in intersections[intersections["seam"] == model.seam].iterrows():
         hole = row["hole_id"]
@@ -181,7 +210,19 @@ def _rd_grids(model: SeamModel, intersections: pd.DataFrame,
             match = quality[(quality["hole_id"] == hole)
                             & (quality["seam"] == model.seam)]
             if len(match) and "RD" in match and match["RD"].notna().any():
-                value, is_assumed = float(match["RD"].mean()), False
+                tm, im = _moisture(match)
+                lab = float(match["RD"].mean())
+                fallback = (cfg.minex.rd_fallback_when_unconvertible
+                            if (cfg and cfg.minex) else "stop")
+                unconvertible = basis in ("air_dried", "as_received") and (
+                    tm is None or im is None)
+                if unconvertible and fallback == "treat_as_in_situ":
+                    # Keputusan pemilik data yang tercatat: RD lab dipakai apa
+                    # adanya. Ditandai ASUMSI supaya muncul di kolom "RD asumsi".
+                    value, is_assumed = lab, True
+                else:
+                    value, is_assumed, _ = resolve_in_situ_rd(
+                        lab, basis, tm, im, assumed_rd)
         collar = collars.loc[hole]
         rows.append((float(collar["east"]), float(collar["north"]), value,
                      1.0 if is_assumed else 0.0))
@@ -291,7 +332,7 @@ def run(models: dict[str, SeamModel], limit_masks: dict[str, np.ndarray],
         if alive is None:
             alive = np.isfinite(model.isopach.z)
         rd_grid, rd_assumed = _rd_grids(model, intersections, collars, quality,
-                                        assumed)
+                                        assumed, cfg=cfg)
         report.estimates.append(estimate_seam(
             key, model, alive, points_frame, intersections, collars, radii,
             rd_grid, rd_assumed, policy=cfg.poo.two_direction_policy))

@@ -51,8 +51,8 @@ minex:
   - f10
   marker_seams:
   - W
-  quality_rd_basis: in_situ
-  quality_moisture_basis: unknown
+  quality_rd_basis: air_dried
+  quality_moisture_basis: adb
   quality_cv_unit: kcal/kg
   on_invalid_quality_interval: exclude
   quality_column_basis:
@@ -71,6 +71,12 @@ minex:
     pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
     diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
   seam_aliases: {}
+  rd_fallback_when_unconvertible: treat_as_in_situ
+  rd_fallback_basis: 'Dinyatakan pemilik data 2026-09-12: kolom TM dan IM tidak tersedia di
+    berkas kualitas, jadi RD laboratorium diperlakukan sebagai RD in-situ. Ini ASUMSI yang
+    diketahui MELEBIHKAN tonase, bukan pengukuran. Besarnya terukur pada data ini: 1,1% bila
+    TM sebenarnya 10%; 4,2% bila TM 20%; 7,2% bila TM 30%; 10,0% bila TM 40%. Begitu kolom
+    TM tersedia, setel kembali ke ''stop'' agar konversi Preston & Sanders berjalan.'
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
 core_loss_treatment: as_coal

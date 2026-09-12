@@ -146,10 +146,16 @@ def run(cfg: Config, spacing: float = 25.0,
             "kelengkapan pernyataan keprospekan beralasan.")
 
     # 10 estimasi
-    stages.estimate = estimate_grid.run(
-        stages.models, stages.masks, stages.observation.frame,
-        stages.intersections, collars, stages.radii, cfg,
-        quality=stages.dataset.quality)
+    from ..errors import MissingDataError
+    try:
+        stages.estimate = estimate_grid.run(
+            stages.models, stages.masks, stages.observation.frame,
+            stages.intersections, collars, stages.radii, cfg,
+            quality=stages.dataset.quality)
+    except MissingDataError as exc:
+        stages.stopped_at = "10_densitas"
+        stages.messages.append(f"Tahap 10 densitas: {exc}")
+        return stages
     if not stages.estimate.passed:
         stages.stopped_at = "10_swauji"
         stages.messages.append(

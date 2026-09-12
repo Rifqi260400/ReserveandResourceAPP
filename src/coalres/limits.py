@@ -174,13 +174,52 @@ def check_density_rule(quality: pd.DataFrame | None, cfg,
     """KCMI 4.6.3.1 butir RD - kewajiban, bukan saran."""
     if quality is None:
         return
+    basis = cfg.minex.quality_rd_basis if cfg.minex else "unknown"
+
+    # Bahan konversi diperiksa LEBIH DULU dan TANPA memandang peringkat.
+    # Peringkat hanya menentukan seberapa keras pedoman menuntutnya; memakai RD
+    # laboratorium apa adanya untuk tonase salah pada peringkat mana pun, karena
+    # air yang sudah menguap di lab tetap ada di dalam tanah.
+    if basis in ("air_dried", "as_received"):
+        have_tm = any(c in quality.columns and quality[c].notna().any()
+                      for c in ("TM", "TM_ar", "TOTAL_MOISTURE"))
+        moisture_basis = cfg.minex.quality_moisture_basis if cfg.minex else "unknown"
+        if moisture_basis == "ar" and "MOISTURE" in quality.columns:
+            have_tm = have_tm or quality["MOISTURE"].notna().any()
+        have_im = any(c in quality.columns and quality[c].notna().any()
+                      for c in ("IM", "M_adb", "IM_adb"))
+        if moisture_basis == "adb" and "MOISTURE" in quality.columns:
+            have_im = have_im or quality["MOISTURE"].notna().any()
+        if not (have_tm and have_im):
+            missing = ([] if have_tm else ["TM (as-received)"]) + \
+                      ([] if have_im else ["IM (air-dried)"])
+            fallback = cfg.minex.rd_fallback_when_unconvertible if cfg.minex else "stop"
+            if fallback == "treat_as_in_situ":
+                report.notes.append(
+                    f"KCMI 4.6.3.1: RD berbasis '{basis}' tidak dapat dikonversi "
+                    f"- {', '.join(missing)} tidak tersedia. Atas keputusan "
+                    "pemilik data, RD laboratorium DIPERLAKUKAN sebagai in-situ. "
+                    "Ini ASUMSI, bukan pengukuran: tonase karena itu "
+                    "MELEBIHKAN, sekitar 1% (bila TM 10%) sampai 10% (bila TM "
+                    f"40%). Dasar: {cfg.minex.rd_fallback_basis[:200]}")
+                return
+            report.blockers.append(
+                f"KCMI 4.6.3.1: RD berbasis '{basis}' WAJIB dikonversi ke "
+                "in-situ dengan Preston & Sanders, tetapi bahan konversinya "
+                f"tidak lengkap - yang hilang: {', '.join(missing)}. Memakai RD "
+                "laboratorium apa adanya MELEBIHKAN tonase; pada data ini "
+                "antara 1% (TM 10%) dan 10% (TM 40%). Tidak ada nilai bawaan "
+                "untuk TM: ia dipasok, bukan ditebak.")
+            return
+
     cv = next((c for c in ("CV", "CV_adb") if c in quality.columns), None)
     if cv is None:
         return
     median_cv = float(quality[cv].dropna().median())
     if median_cv >= LOW_RANK_CV_ADB:
         return
-    basis = cfg.minex.quality_rd_basis if cfg.minex else "unknown"
+
+
     if basis == "in_situ":
         report.notes.append(
             f"KCMI 4.6.3.1: CV median {median_cv:.0f} kcal/kg - batubara "

@@ -189,6 +189,29 @@ class MinexSpec(_Strict):
     # sehingga keputusannya terlihat, bukan hilang.
     quality_basis_override_basis: str = ""
 
+    # Apa yang dilakukan ketika RD berbasis laboratorium TETAPI bahan konversi
+    # Preston & Sanders (TM dan IM) tidak tersedia.
+    #   stop               : hentikan run (bawaan). Tonase tidak dihitung dari
+    #                        RD yang tidak dapat dikonversi.
+    #   treat_as_in_situ   : pakai RD lab apa adanya, DIPERLAKUKAN sebagai
+    #                        in-situ. Ini ASUMSI, bukan pengukuran, dan ia
+    #                        MELEBIHKAN tonase - sekitar 1% sampai 10% menurut
+    #                        seberapa jauh TM di atas IM. Ia dicap sebagai asumsi
+    #                        pada setiap keluaran.
+    rd_fallback_when_unconvertible: Literal["stop", "treat_as_in_situ"] = "stop"
+    rd_fallback_basis: str = ""
+
+    @model_validator(mode="after")
+    def _fallback_needs_basis(self) -> "MinexSpec":
+        if (self.rd_fallback_when_unconvertible == "treat_as_in_situ"
+                and len(self.rd_fallback_basis.strip()) < 60):
+            raise ValueError(
+                "minex.rd_fallback_basis wajib diisi (minimum 60 karakter) "
+                "ketika rd_fallback_when_unconvertible = 'treat_as_in_situ'. "
+                "Memperlakukan RD laboratorium sebagai in-situ melebihkan "
+                "tonase; alasannya harus tercatat dan ikut ke keluaran.")
+        return self
+
     # Interval kualitas terbalik (to <= from) adalah cacat data. Perbaikannya
     # bukan urusan kode - menukar from dan to akan menebak niat penulisnya.
     #   stop    : hentikan run (bawaan)
