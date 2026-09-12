@@ -23,6 +23,20 @@ RDBasis = Literal["in_situ", "air_dried", "as_received", "unknown"]
 EstimationMethod = Literal["voronoi", "circular"]
 InputFormat = Literal["bgg_workbook", "minex_flat"]
 
+# Basis pelaporan kualitas. 'unknown' bukan nilai netral: ia menghentikan run.
+QualityBasis = Literal["adb", "ar", "db", "daf", "dmmf", "unknown"]
+
+# Penyelesaian tabrakan induk-anak seam. 'undeclared' menghentikan run.
+#   merge_children    : anak digabung kembali menjadi induk (A1+A2 -> A)
+#   split_parent      : induk dipecah mengikuti pola anak di lubang tetangga
+#   treat_as_distinct : induk dan anak adalah seam berbeda yang tidak bertumpuk
+SeamCollisionResolution = Literal[
+    "undeclared", "merge_children", "split_parent", "treat_as_distinct"
+]
+
+# Asal angka zona pelapukan.
+WeatheringProvenance = Literal["measured", "assumed", "unknown"]
+
 JUSTIFICATION_MIN_CHARS = 100
 
 # Nilai radius di template konfigurasi BELUM diverifikasi terhadap teks
@@ -151,6 +165,13 @@ class MinexSpec(_Strict):
     # dinyatakan agar tidak ada yang mengalikan 1000 di kemudian hari.
     quality_cv_unit: Literal["kcal/kg", "cal/g", "MJ/kg"] = "kcal/kg"
 
+    # Basis per kolom kualitas. Kunci = nama kolom di quality_columns.
+    # Kolom yang tidak terdaftar dianggap 'unknown' dan menghentikan run.
+    # Basis TIDAK boleh disimpulkan dari nilainya oleh kode; tetapi bila basis
+    # yang dinyatakan bertentangan dengan bukti korelasi abu-kalori, run
+    # dihentikan - lihat audit G2.
+    quality_column_basis: dict[str, QualityBasis] = Field(default_factory=dict)
+
     # Interval kualitas terbalik (to <= from) adalah cacat data. Perbaikannya
     # bukan urusan kode - menukar from dan to akan menebak niat penulisnya.
     #   stop    : hentikan run (bawaan)
@@ -163,6 +184,75 @@ class MinexSpec(_Strict):
             raise ValueError("quality_file diisi tetapi quality_columns kosong.")
         if self.faults_file is not None and not self.fault_columns:
             raise ValueError("faults_file diisi tetapi fault_columns kosong.")
+        return self
+
+
+class SeamPolicy(_Strict):
+    """Kebijakan seam yang tidak boleh ditebak oleh kode.
+
+    Ketika seam induk 'A' muncul di sebagian lubang dan anaknya 'A1'/'A2' di
+    lubang lain - tanpa satu pun lubang memuat keduanya - tidak ada gejala per
+    lubang. Yang terjadi justru di bidang datar: satu tesselasi untuk A dan satu
+    lagi untuk A1/A2 sama-sama menutup SELURUH area, dan tonasenya terhitung dua
+    kali. Ini overestimasi diam terbesar yang tersedia pada data semacam ini,
+    jadi penyelesaiannya wajib dinyatakan manusia.
+    """
+
+    collision_resolution: SeamCollisionResolution = "undeclared"
+    collision_basis: str = ""
+
+    @model_validator(mode="after")
+    def _resolution_needs_basis(self) -> "SeamPolicy":
+        if self.collision_resolution != "undeclared" and not self.collision_basis.strip():
+            raise ValueError(
+                "seam_policy.collision_resolution dinyatakan tetapi "
+                "collision_basis kosong. Pilihan ini menggerakkan tonase "
+                "puluhan persen; dasarnya wajib tercatat."
+            )
+        return self
+
+
+class ObservationPointSpec(_Strict):
+    """Apa yang membuat sebuah lubang menjadi TITIK OBSERVASI.
+
+    SNI menuntut ketebalan DAN kualitas pada titik observasi. Bila kualitas
+    tidak dituntut, populasi titik membengkak dan kelas naik atas dasar geometri
+    semata. Karena keduanya dipakai di lapangan, pilihannya wajib dinyatakan -
+    dan ikut tercetak pada keluaran.
+    """
+
+    requires_quality: bool | None = None
+    basis: str = ""
+
+    @model_validator(mode="after")
+    def _choice_needs_basis(self) -> "ObservationPointSpec":
+        if self.requires_quality is not None and not self.basis.strip():
+            raise ValueError(
+                "observation_point.requires_quality dinyatakan tetapi basis kosong."
+            )
+        return self
+
+
+class WeatheringSpec(_Strict):
+    """Zona pelapukan (base of weathering).
+
+    Batubara di atas BOW tidak dapat dijual. Bila angkanya konstanta yang
+    diasumsikan, bukan hasil pembacaan log, itu asumsi pemodelan - bukan data -
+    dan wajib muncul sebagai asumsi pada keluaran.
+    """
+
+    marker_seam: str = "W"
+    provenance: WeatheringProvenance = "unknown"
+    provenance_basis: str = ""
+    # Dipakai HANYA untuk lubang yang tidak punya baris penanda.
+    constant_depth_m: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _provenance_needs_basis(self) -> "WeatheringSpec":
+        if self.provenance != "unknown" and not self.provenance_basis.strip():
+            raise ValueError(
+                "weathering.provenance dinyatakan tetapi provenance_basis kosong."
+            )
         return self
 
 
@@ -265,6 +355,9 @@ class Config(_Strict):
     # Seam induk yang terpecah menjadi beberapa anak, mis. {"A": ["A1", "A2"]}.
     # Anak mewarisi kedudukan stratigrafi induknya dan diurutkan sesuai daftar.
     seam_splits: dict[str, list[str]] = Field(default_factory=dict)
+    seam_policy: SeamPolicy = Field(default_factory=SeamPolicy)
+    weathering: WeatheringSpec = Field(default_factory=WeatheringSpec)
+    observation_point: ObservationPointSpec = Field(default_factory=ObservationPointSpec)
 
     classification_radii_m: RadiiTable
     cutoffs: Cutoffs

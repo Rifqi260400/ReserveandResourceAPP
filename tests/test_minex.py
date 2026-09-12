@@ -46,6 +46,19 @@ def cfg(base_config_dict, write_config, minex_dir):
     }
     base_config_dict["stratigraphy"] = ["A", "B"]
     base_config_dict["seam_splits"] = {"A": ["A1", "A2"]}
+    # Fixture uji: gerbang Tahap 2 dinyatakan agar jalur hilir dapat diuji.
+    # Ini BUKAN keputusan pengguna - lihat config/minex_dummy.yaml.
+    fixture_basis = "FIXTURE UJI - bukan keputusan pengguna; lihat config/minex_dummy.yaml."
+    base_config_dict["seam_policy"] = {
+        "collision_resolution": "treat_as_distinct", "collision_basis": fixture_basis}
+    base_config_dict["weathering"] = {
+        "marker_seam": "W", "provenance": "assumed",
+        "provenance_basis": fixture_basis, "constant_depth_m": 3.0}
+    base_config_dict["observation_point"] = {
+        "requires_quality": False, "basis": fixture_basis}
+    base_config_dict["minex"]["quality_column_basis"] = {
+        "RD": "adb", "MOISTURE": "adb", "ASH": "adb", "VM": "adb",
+        "FC": "adb", "TS": "adb", "CV": "daf"}
     # 42 dari 60 lubang tidak punya hasil lab. Tanpa nilai asumsi mereka
     # dikeluarkan seluruhnya - perilaku yang benar, tapi ia menyembunyikan
     # jalur "RD asumsi" dari pengujian.

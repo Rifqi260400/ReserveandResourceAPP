@@ -75,7 +75,7 @@ def test_bow_extracted_from_marker_rows():
     from coalres.io.minex import load_minex
     from conftest import ROOT
 
-    path = ROOT / "config" / "minex_dummy.yaml"
+    path = ROOT / "config" / "minex_dummy_resolved.yaml"
     if not path.exists():
         pytest.skip("konfigurasi Minex tidak tersedia")
     cfg = Config.load(path)

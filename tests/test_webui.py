@@ -11,14 +11,14 @@ from coalres.webui.app import EXPORT_KINDS, create_app
 def client():
     from conftest import ROOT
 
-    if not (ROOT / "config" / "minex_dummy.yaml").exists():
+    if not (ROOT / "config" / "minex_dummy_resolved.yaml").exists():
         pytest.skip("konfigurasi Minex tidak tersedia")
     return TestClient(create_app())
 
 
 @pytest.fixture(scope="module")
 def ran(client):
-    client.post("/api/config/load", json={"path": "config/minex_dummy.yaml"})
+    client.post("/api/config/load", json={"path": "config/minex_dummy_resolved.yaml"})
     response = client.post("/api/run")
     assert response.status_code == 200, response.text
     return response.json()

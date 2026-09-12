@@ -1,0 +1,148 @@
+# FIXTURE UJI - BUKAN KEPUTUSAN PENGGUNA.
+# Nilai ini ada semata agar uji regresi hilir tetap berjalan melewati gerbang Tahap 2.
+# Jangan pakai untuk estimasi sungguhan: gerbang yang sama pada config/minex_dummy.yaml sengaja dibiarkan TERBUKA dan menunggu keputusan manusia.
+paths:
+  workbook_dir: data/minex
+  las_dir: null
+  quality_table: null
+  topography_dxf: null
+  output_dir: output/minex_resolved
+input_format: minex_flat
+minex:
+  survey_file: data/minex/surv.txt
+  lithology_file: data/minex/lit.txt
+  quality_file: data/minex/qual.txt
+  topography_file: data/minex/topo.dat
+  faults_file: data/minex/faults01.dat
+  survey_columns:
+  - hole_id
+  - east
+  - north
+  - rl
+  - total_depth
+  lithology_columns:
+  - hole_id
+  - seam
+  - depth_from
+  - depth_to
+  - code
+  quality_columns:
+  - hole_id
+  - seam
+  - depth_from
+  - depth_to
+  - RD
+  - MOISTURE
+  - ASH
+  - VM
+  - FC
+  - TS
+  - CV
+  fault_columns:
+  - name
+  - east
+  - north
+  - z
+  - f5
+  - f6
+  - f7
+  - f8
+  - f9
+  - f10
+  marker_seams:
+  - W
+  quality_rd_basis: in_situ
+  quality_moisture_basis: unknown
+  quality_cv_unit: kcal/kg
+  on_invalid_quality_interval: exclude
+  quality_column_basis:
+    RD: adb
+    MOISTURE: adb
+    ASH: adb
+    VM: adb
+    FC: adb
+    TS: adb
+    CV: daf
+authoritative_coordinate_source: collar_ts
+coal_thickness_source: lithology
+core_loss_treatment: as_coal
+stratigraphy:
+- A
+- B
+seam_splits:
+  A:
+  - A1
+  - A2
+geological_condition: moderat
+geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan
+  dataset dummy dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
+  menerus di 59 dari 60 lubang, seam A terpecah menjadi A1 dan A2 pada sebagian area, dan
+  terdapat satu jejak sesar (faults01). Penilaian sebenarnya wajib menguraikan kontinuitas
+  seam antar lubang, throw dan rapat sesar, variasi ketebalan lateral, serta besaran dan keseragaman
+  dip, dengan bukti penampang.'
+classification_radii_m:
+  sederhana:
+    measured: 500
+    indicated: 1000
+    inferred: 1500
+  moderat:
+    measured: 250
+    indicated: 500
+    inferred: 1000
+  kompleks:
+    measured: 100
+    indicated: 200
+    inferred: 400
+cutoffs:
+  min_seam_thickness_m: 0.4
+  max_parting_thickness_m: 0.3
+  min_core_recovery_pct: 90
+  min_quality_coverage_frac: 0.9
+validation:
+  collar_vs_topo_tolerance_m: 2.0
+  mass_balance_tolerance_pct: 0.5
+rpeee_constraints:
+  max_depth_m: 100.0
+  max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji jalur
+    pelaporan Sumberdaya sampai ujung pada dataset dummy, bukan dari studi kelayakan, batas
+    pit blok sekitar, maupun batas stripping ratio. Pada data produksi, angka ini WAJIB diganti
+    dengan batas yang punya dasar ekonomi nyata dan dasar itu dinyatakan di sini.
+  min_cv_ar_kcal_kg: null
+  max_ash_adb_pct: null
+  excluded_area_wkt: ''
+  excluded_area_basis: ''
+maps:
+  contour_interval_m: 5.0
+  index_contour_every: 5
+  label_contours: true
+  dxf_export:
+    enabled: true
+    contour_interval_m: 2.0
+    index_every: 5
+    layer_template: Seam {seam} {surface}
+    index_suffix: ' Index'
+    per_seam_files: true
+    include_boreholes: true
+    include_subcrop: true
+    clip_to_subcrop: true
+    per_surface_files: true
+estimation_method: voronoi
+block_boundary_wkt: ''
+assumed_rd_t_per_m3: 1.3
+seam_policy:
+  collision_resolution: treat_as_distinct
+  collision_basis: 'FIXTURE UJI - BUKAN KEPUTUSAN PENGGUNA. Nilai ini ada semata agar uji
+    regresi hilir tetap berjalan melewati gerbang Tahap 2. Jangan pakai untuk estimasi sungguhan:
+    gerbang yang sama pada config/minex_dummy.yaml sengaja dibiarkan TERBUKA dan menunggu
+    keputusan manusia.'
+weathering:
+  marker_seam: W
+  provenance: assumed
+  provenance_basis: 'FIXTURE UJI - BUKAN KEPUTUSAN PENGGUNA. Nilai ini ada semata agar uji
+    regresi hilir tetap berjalan melewati gerbang Tahap 2. Jangan pakai untuk estimasi sungguhan:
+    gerbang yang sama pada config/minex_dummy.yaml sengaja dibiarkan TERBUKA dan menunggu
+    keputusan manusia.'
+  constant_depth_m: 3.0
+observation_point:
+  requires_quality: false
+  basis: FIXTURE UJI - bukan keputusan pengguna; lihat config/minex_dummy.yaml.

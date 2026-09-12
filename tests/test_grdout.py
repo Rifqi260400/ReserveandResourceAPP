@@ -92,7 +92,7 @@ def test_uncut_keeps_intersections_below_cutoff():
     from coalres.io.minex import load_minex
     from coalres.seams import build_intersections_from_dataset
 
-    path = ROOT / "config" / "minex_dummy.yaml"
+    path = ROOT / "config" / "minex_dummy_resolved.yaml"
     if not path.exists():
         pytest.skip("konfigurasi Minex tidak tersedia")
     cfg = Config.load(path)

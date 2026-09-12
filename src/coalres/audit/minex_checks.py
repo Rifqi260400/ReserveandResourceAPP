@@ -15,6 +15,7 @@ from ..config import Config
 from ..io.minex import HoleDataset
 from ..logging_setup import get_logger
 from .checks import AuditReport, Severity, check_geological_condition, check_rpeee
+from .gate2 import run_gate2
 
 log = get_logger("audit.minex")
 
@@ -327,7 +328,6 @@ def run_minex_audit(dataset: HoleDataset, cfg: Config) -> AuditReport:
     report = AuditReport()
     report.context["n_holes"] = len(dataset.collars)
     check_column_declaration(dataset, cfg, report)
-    check_duplicates(dataset, report)
     check_cross_file_coverage(dataset, report)
     check_intervals(dataset, cfg, report)
     check_stratigraphic_order(dataset, cfg, report)
@@ -337,4 +337,6 @@ def run_minex_audit(dataset: HoleDataset, cfg: Config) -> AuditReport:
     check_faults(dataset, cfg, report)
     check_geological_condition(cfg, report)
     check_rpeee(cfg, report)
+    # Gerbang Tahap 2: kekeliruan yang tidak bergejala.
+    run_gate2(dataset, cfg, report)
     return report
