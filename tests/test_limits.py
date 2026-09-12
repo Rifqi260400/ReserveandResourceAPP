@@ -42,12 +42,21 @@ def _declared(cfg, **land):
 
 # --- 4.6.1 legalitas / 4.6.2 lahan: menggugurkan ---------------------------
 
-def test_undeclared_legal_status_blocks_reporting(scene):
+def test_undeclared_legal_status_does_not_block_the_estimate(scene):
+    """KCMI 4.6 menulis RPEEE "dapat mengacu" pada faktor pengubah.
+
+    Estimasi sumber daya adalah pekerjaan geologi; tidak tahu jenis izin bukan
+    alasan menolak menghitung batubara yang ada di tanah. Butir yang belum
+    dinyatakan dicatat sebagai kesiapan pelaporan, bukan penggugur.
+    """
     models, cfg, topo, dataset = scene
     report = limits.run(models, cfg, topo=topo, quality=dataset.quality)
-    assert not report.reportable
-    assert any("4.6.1.1" in b for b in report.blockers)
-    assert any("4.6.2.1" in b for b in report.blockers)
+    assert report.reportable
+    assert report.blockers == []
+    assert len(report.readiness) >= 3
+    assert any("4.6.1.1" in r for r in report.readiness)
+    assert any("4.6.2.1" in r for r in report.readiness)
+    assert not report.reporting_ready
 
 
 def test_protected_forest_cannot_be_reported_at_all(scene):
@@ -60,40 +69,54 @@ def test_protected_forest_cannot_be_reported_at_all(scene):
         assert any(category in b for b in report.blockers)
 
 
-def test_production_forest_needs_ippkh(scene):
+def test_production_forest_records_the_ippkh_requirement(scene):
     models, cfg, topo, dataset = scene
     variant = _declared(cfg, forest_category="hutan_produksi")
     report = limits.run(models, variant, topo=topo, quality=dataset.quality)
-    assert any("IPPKH" in b for b in report.blockers)
+    assert report.reportable
+    assert any("IPPKH" in r for r in report.readiness)
 
     with_permit = variant.model_copy(update={"limits": variant.limits.model_copy(
         update={"legal": variant.limits.legal.model_copy(
             update={"ippkh_exploration_held": True})})})
     report2 = limits.run(models, with_permit, topo=topo, quality=dataset.quality)
-    assert not any("IPPKH" in b for b in report2.blockers)
+    assert not any("IPPKH" in r for r in report2.readiness)
 
 
-def test_a_permit_not_covering_mine_life_blocks(scene):
+def test_a_permit_not_covering_mine_life_warns_but_still_counts(scene):
     models, cfg, topo, dataset = scene
     variant = _declared(cfg)
     variant = variant.model_copy(update={"limits": variant.limits.model_copy(
         update={"legal": variant.limits.legal.model_copy(
             update={"permit_covers_mine_life": False})})})
     report = limits.run(models, variant, topo=topo, quality=dataset.quality)
-    assert any("umur tambang" in b for b in report.blockers)
+    assert report.reportable
+    assert any("umur tambang" in w for w in report.warnings)
 
 
-def test_rtrw_refusal_blocks(scene):
+def test_rtrw_refusal_still_blocks(scene):
+    """RTRW yang DINYATAKAN melarang adalah fakta, bukan ketidaktahuan."""
     models, cfg, topo, dataset = scene
     variant = _declared(cfg, rtrw_allows_mining=False)
     report = limits.run(models, variant, topo=topo, quality=dataset.quality)
     assert any("RTRW" in b for b in report.blockers)
 
 
-def test_fully_declared_status_clears_the_blockers(scene):
+def test_fully_declared_status_clears_everything(scene):
     models, cfg, topo, dataset = scene
     report = limits.run(models, _declared(cfg), topo=topo, quality=dataset.quality)
     assert report.reportable, report.blockers
+    assert report.reporting_ready, report.readiness
+
+
+def test_only_a_declared_prohibition_stops_reporting(scene):
+    """Garisnya: fakta terlarang yang DINYATAKAN menghentikan; data kosong tidak."""
+    models, cfg, topo, dataset = scene
+    unknown = limits.run(models, cfg, topo=topo, quality=dataset.quality)
+    declared_bad = limits.run(models, _declared(cfg, forest_category="hutan_lindung"),
+                              topo=topo, quality=dataset.quality)
+    assert unknown.reportable and not unknown.reporting_ready
+    assert not declared_bad.reportable
 
 
 # --- 4.6.3.1 aturan RD ------------------------------------------------------

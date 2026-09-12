@@ -1,15 +1,37 @@
 """Tahap 9: batas pelaporan Sumber daya menurut Pedoman Praktis KCMI 2017 4.6.
 
-Pasal 4.6 menyusun batas dalam empat kelompok, dan ketiganya yang pertama
-bersifat MENGGUGURKAN - bukan pertimbangan yang boleh dicatat lalu dilewati:
+GARIS YANG MEMBEDAKAN MENGGUGURKAN DARI MENCATAT.
+
+Pasal 4.6 membuka dengan: "Penilaian keprospekan beralasan diperlukan pada
+tingkat awal/scoping study. Parameter penilaian tersebut DAPAT MENGACU pada 10
+faktor pengubah relevan untuk KONVERSI SUMBER DAYA MENJADI CADANGAN."
+
+Jadi legalitas dan lahan adalah acuan penilaian tingkat scoping, bukan syarat
+yang harus dipenuhi sebelum sumber daya boleh diestimasi. Estimasi sumber daya
+adalah pekerjaan GEOLOGI; izin dan status lahan tidak mengubah berapa banyak
+batubara ada di tanah.
+
+Karena itu aturannya:
+
+  DATA YANG BELUM ADA  ->  dicatat sebagai kesiapan pelaporan, TIDAK menghentikan
+                           estimasi. Tidak tahu jenis izin bukan alasan menolak
+                           menghitung batubara.
+
+  FAKTA YANG MENGGUGURKAN, dan SUDAH DINYATAKAN  ->  menghentikan pelaporan.
+                           Bila status kawasan dinyatakan Hutan Lindung, pedoman
+                           menulis tegas: "CPI tidak bisa melaporkan Sumber daya
+                           untuk tambang terbuka di Hutan Lindung, area
+                           konservasi atau area lain yang terlarang untuk
+                           kegiatan penambangan." Itu larangan atas fakta yang
+                           diketahui, bukan atas ketidaktahuan.
+
+Kelompok batas pasal 4.6:
 
   4.6.1 Legalitas      izin masih berlaku dan menutup umur tambang; CnC bila
                        regulasi menuntut; data bor dari kawasan hutan wajib
-                       didukung IPPKH eksplorasi.
-  4.6.2 Lahan          "CPI tidak bisa melaporkan Sumber daya untuk tambang
-                       terbuka di Hutan Lindung, area konservasi atau area lain
-                       yang terlarang untuk kegiatan penambangan." Ini larangan.
-                       RTRW harus memungkinkan usaha pertambangan.
+                       didukung IPPKH eksplorasi. Kesiapan pelaporan.
+  4.6.2 Lahan          status kawasan dan RTRW. Kesiapan pelaporan, KECUALI
+                       ketika status yang dinyatakan memang terlarang.
   4.6.3 Cut off        kedalaman pelapukan, tebal minimum yang dapat ditambang,
                        maksimum Abu/Sulfur/TM, minimum CV, dan RD: "Untuk
                        batubara peringkat rendah, WAJIB menggunakan RD insitu
@@ -63,11 +85,22 @@ class LimitsReport:
     blockers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Yang belum dinyatakan: dicatat, tidak menghentikan estimasi.
+    readiness: list[str] = field(default_factory=list)
 
     @property
     def reportable(self) -> bool:
-        """Sumber daya boleh dilaporkan hanya bila tidak ada penggugur."""
+        """Hanya FAKTA TERLARANG YANG DINYATAKAN yang menghentikan pelaporan.
+
+        Data yang belum ada tidak menghentikan apa pun: tidak tahu jenis izin
+        bukan alasan menolak menghitung batubara yang ada di tanah.
+        """
         return not self.blockers
+
+    @property
+    def reporting_ready(self) -> bool:
+        """Siap dinyatakan sebagai Sumber daya KCMI yang lengkap."""
+        return not self.blockers and not self.readiness
 
     def summary(self) -> pd.DataFrame:
         rows = []
@@ -84,38 +117,39 @@ def check_legal(cfg, report: LimitsReport) -> None:
     """KCMI 4.6.1."""
     legal = cfg.limits.legal
     if legal.permit_type is None:
-        report.blockers.append(
-            "KCMI 4.6.1.1: jenis izin tambang belum dinyatakan. Sumber daya "
-            "tidak dapat dilaporkan tanpa dasar perizinan.")
+        report.readiness.append(
+            "KCMI 4.6.1.1: jenis izin tambang belum dinyatakan. Tidak "
+            "menghentikan estimasi - ia dibutuhkan untuk pernyataan keprospekan "
+            "beralasan tingkat scoping, bukan untuk menghitung batubara.")
     if legal.permit_covers_mine_life is None:
-        report.blockers.append(
+        report.readiness.append(
             "KCMI 4.6.1.1: belum dinyatakan apakah sisa masa berlaku izin "
             "(termasuk peluang perpanjangan) menutup perkiraan umur tambang.")
     elif not legal.permit_covers_mine_life:
-        report.blockers.append(
+        report.warnings.append(
             "KCMI 4.6.1.1: masa berlaku izin TIDAK menutup perkiraan umur "
-            "tambang. Sumber daya di luar masa itu tidak memenuhi keprospekan "
-            "beralasan.")
+            "tambang. Angka tetap dihitung, tetapi keprospekan beralasan di luar "
+            "masa itu tidak dapat dipertahankan.")
     if legal.cnc_certified is False:
         report.warnings.append(
             "KCMI 4.6.1.2: perusahaan belum tersertifikasi CnC. Periksa apakah "
             "regulasi yang berlaku saat estimasi menuntutnya.")
     if legal.exploration_in_forest_area:
         if not legal.ippkh_exploration_held:
-            report.blockers.append(
+            report.readiness.append(
                 "KCMI 4.6.1.3: ada data bor dari kawasan hutan tetapi IPPKH "
-                "eksplorasi tidak dinyatakan dimiliki. Data itu tidak dapat "
-                "menopang pelaporan Sumber daya.")
+                "eksplorasi tidak dinyatakan dimiliki.")
 
 
 def check_land(cfg, report: LimitsReport) -> None:
     """KCMI 4.6.2 - larangan, bukan pertimbangan."""
     land = cfg.limits.land
     if land.forest_category is None or land.forest_category == "tidak_diketahui":
-        report.blockers.append(
-            "KCMI 4.6.2.1: status kawasan hutan belum dinyatakan. Sumber daya "
-            "tambang terbuka TIDAK DAPAT dilaporkan di Hutan Lindung maupun "
-            "area konservasi, jadi statusnya harus diketahui lebih dulu.")
+        report.readiness.append(
+            "KCMI 4.6.2.1: status kawasan hutan belum dinyatakan. Estimasi tetap "
+            "berjalan; yang tertahan hanya pernyataan bahwa area ini boleh "
+            "dilaporkan - dan itu hanya gugur bila statusnya ternyata Hutan "
+            "Lindung atau konservasi.")
     elif land.forest_category in PROHIBITED_FOREST:
         report.blockers.append(
             f"KCMI 4.6.2.1: area berstatus '{land.forest_category}'. Pedoman "
@@ -123,11 +157,11 @@ def check_land(cfg, report: LimitsReport) -> None:
             "di sana.")
     elif land.forest_category == "hutan_produksi":
         if not cfg.limits.legal.ippkh_exploration_held:
-            report.blockers.append(
+            report.readiness.append(
                 "KCMI 4.6.2.1: deposit di Hutan Produksi menuntut bukti bahwa "
                 "pemboran eksplorasi didukung IPPKH eksplorasi.")
     if land.rtrw_allows_mining is None:
-        report.warnings.append(
+        report.readiness.append(
             "KCMI 4.6.2.2: kesesuaian RTRW belum dinyatakan.")
     elif not land.rtrw_allows_mining:
         report.blockers.append(

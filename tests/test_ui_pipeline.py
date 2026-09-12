@@ -31,14 +31,19 @@ def test_an_undeclared_complexity_parameter_is_a_gate_not_a_crash():
     assert stages.suggestions and len(stages.suggestions) == 8
 
 
-def test_declaring_it_moves_the_stop_to_the_next_gate():
-    """Gerbang berikutnya KCMI 4.6: izin dan status lahan belum dinyatakan."""
+def test_declaring_it_lets_the_run_finish():
+    """Legalitas dan lahan yang belum diisi TIDAK menghentikan estimasi.
+
+    KCMI 4.6 menyebut faktor itu acuan penilaian tingkat scoping untuk konversi
+    Sumber daya menjadi Cadangan - bukan syarat sebelum batubara boleh dihitung.
+    """
     _skip_unless(GATED)
     stages = pipeline.run(Config.load(GATED), spacing=50.0,
                           complexity_overrides=INTRUSI, cross_validation=False)
-    assert stages.stopped_at == "9_batas"
-    assert stages.limits is not None and not stages.limits.reportable
-    assert len(stages.limits.blockers) == 3
+    assert stages.stopped_at is None
+    assert stages.complete
+    assert stages.limits.blockers == []
+    assert stages.limits.readiness          # dicatat, tidak menghentikan
 
 
 def test_a_fully_declared_config_runs_to_the_end():
@@ -59,6 +64,20 @@ def test_the_stages_run_in_order_and_stop_where_they_stop():
     assert stages.radii is None                 # tahap 8 belum
     assert stages.limits is None                # tahap 9 belum
     assert stages.estimate is None              # tahap 10 belum
+
+
+def test_a_declared_prohibition_does_stop_the_run(tmp_path):
+    """Garis yang tersisa: status terlarang yang DINYATAKAN tetap menghentikan."""
+    _skip_unless(GATED)
+    import yaml
+    raw = yaml.safe_load(GATED.read_text())
+    raw.setdefault("limits", {}).setdefault("land", {})["forest_category"] = "hutan_lindung"
+    path = tmp_path / "lindung.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    stages = pipeline.run(Config.load(path), spacing=50.0,
+                          complexity_overrides=INTRUSI, cross_validation=False)
+    assert stages.stopped_at == "9_batas"
+    assert any("hutan_lindung" in b for b in stages.limits.blockers)
 
 
 def test_export_refuses_an_unfinished_run():

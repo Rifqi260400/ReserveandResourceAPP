@@ -132,11 +132,18 @@ def run(cfg: Config, spacing: float = 25.0,
         quality=stages.dataset.quality)
     stages.masks = {r.key: r.mask for r in stages.limits.results}
     if not stages.limits.reportable:
+        # Hanya fakta terlarang YANG DINYATAKAN yang menghentikan - bukan data
+        # yang belum diisi. Lihat catatan modul limits.
         stages.stopped_at = "9_batas"
         stages.messages.append(
-            f"Tahap 9: {len(stages.limits.blockers)} penggugur KCMI 4.6. "
-            "Sumber daya tidak dapat dilaporkan.")
+            f"Tahap 9: {len(stages.limits.blockers)} penggugur KCMI 4.6 - "
+            "status yang dinyatakan memang melarang pelaporan di area ini.")
         return stages
+    if stages.limits.readiness:
+        stages.messages.append(
+            f"Tahap 9: {len(stages.limits.readiness)} butir kesiapan pelaporan "
+            "belum dinyatakan. Estimasi TETAP berjalan; yang tertahan hanya "
+            "kelengkapan pernyataan keprospekan beralasan.")
 
     # 10 estimasi
     stages.estimate = estimate_grid.run(

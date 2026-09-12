@@ -194,12 +194,20 @@ def tab_limits(stages) -> None:
         st.info("Tahap 9 belum dijalankan.")
         return
     if report.blockers:
-        st.error(f"{len(report.blockers)} penggugur - Sumber daya TIDAK dapat "
-                 "dilaporkan.")
+        st.error(f"{len(report.blockers)} penggugur - status yang DINYATAKAN "
+                 "melarang pelaporan di area ini.")
         for line in report.blockers:
             st.write(f"- {line}")
+    elif report.readiness:
+        st.warning(
+            f"{len(report.readiness)} butir kesiapan pelaporan belum dinyatakan. "
+            "Estimasi TETAP berjalan - izin dan status lahan tidak mengubah "
+            "berapa banyak batubara ada di tanah. Yang tertahan hanya kelengkapan "
+            "pernyataan keprospekan beralasan tingkat scoping.")
+        for line in report.readiness:
+            st.write(f"- {line}")
     else:
-        st.success("Tidak ada penggugur legal/lahan.")
+        st.success("Legal dan lahan lengkap; pernyataan keprospekan beralasan siap.")
     for line in report.warnings:
         st.warning(line)
     for line in report.notes:
