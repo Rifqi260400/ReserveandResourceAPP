@@ -114,11 +114,8 @@ validation:
     Kesimpulan: kolom digenerasi independen, tidak saling menutup. Gerbang G7 TETAP AKTIF
     untuk data produksi; waiver ini hanya berlaku untuk dataset latihan ini.'
 rpeee_constraints:
-  max_depth_m: 100.0
-  max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji jalur
-    pelaporan Sumberdaya sampai ujung pada dataset dummy, bukan dari studi kelayakan, batas
-    pit blok sekitar, maupun batas stripping ratio. Pada data produksi, angka ini WAJIB diganti
-    dengan batas yang punya dasar ekonomi nyata dan dasar itu dinyatakan di sini.
+  max_depth_m: null
+  max_depth_basis: ''
   min_cv_ar_kcal_kg: null
   max_ash_adb_pct: null
   excluded_area_wkt: ''
@@ -181,3 +178,16 @@ poo:
   min_coal_recovery_pct: null
   spacing_method: otomatis
   geostatistics_min_data: 30
+limits:
+  depth:
+    max_depth_m: null
+    basis_kind: null
+    basis_note: ''
+    no_depth_limit_basis: 'Dinyatakan pemilik data 2026-09-12: batas kedalaman tidak diterapkan.
+      KCMI 4.6.3.2 menulis CPI ''dapat menggunakan'' acuan kedalaman, bukan wajib, dan klasifikasi
+      SNI/KCMI bersandar pada jarak dari titik pengamatan di bidang X-Y - bukan pada kedalaman.
+      Keprospekan beralasan ditunjukkan oleh kedalaman roof yang teramati sendiri: seluruh
+      sel model berada pada 123 m atau kurang di bawah topografi (median 38-58 m per seam,
+      maksimum 123,1 m pada seam B), yang berada dalam jangkauan tambang terbuka. Batas 100
+      m yang sempat dipakai hanya menggeser tonase 1,16 juta ton dari 33,33 juta ton, yaitu
+      3,5%.'

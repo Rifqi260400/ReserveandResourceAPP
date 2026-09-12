@@ -189,6 +189,8 @@ def test_two_disagreeing_depth_limits_are_refused(tmp_path):
     import yaml
     from coalres.errors import ConfigError
     raw = yaml.safe_load(CONFIG.read_text())
+    raw["rpeee_constraints"] = {**raw["rpeee_constraints"], "max_depth_m": 100.0,
+                                "max_depth_basis": "Angka latihan blok lama."}
     raw["limits"] = {"depth": {
         "max_depth_m": 80.0, "basis_kind": "geoteknik",
         "basis_note": "Rekomendasi studi geoteknik lereng 2026 untuk batas bawah."}}
@@ -215,18 +217,44 @@ def test_the_new_block_syncs_into_the_legacy_one(tmp_path):
     assert cfg.rpeee_constraints.resource_label == "Sumberdaya"
 
 
-def test_a_legacy_only_depth_limit_is_flagged_as_lacking_a_kcmi_basis(scene):
+def test_no_depth_limit_declared_keeps_the_sumberdaya_label(scene):
+    """Posisi pemilik data: kedalaman bukan kriteria klasifikasi.
+
+    KCMI 4.6.3.2 menulis CPI "dapat menggunakan" acuan kedalaman, bukan wajib,
+    dan klasifikasi bersandar pada jarak di bidang X-Y. Ketiadaan batas karena
+    itu sah - tetapi harus DINYATAKAN, bukan sekadar kosong.
+    """
     models, cfg, topo, dataset = scene
+    assert cfg.max_depth_m is None
+    assert cfg.rpeee_demonstrated
+    assert cfg.resource_label == "Sumberdaya"
     report = limits.run(models, _declared(cfg), topo=topo, quality=dataset.quality)
-    assert cfg.max_depth_m == 100.0
-    assert any("blok lama rpeee_constraints" in w for w in report.warnings)
+    assert any("SENGAJA TIDAK diterapkan" in n for n in report.notes)
+    assert not any("INVENTORI BATUBARA" in w for w in report.warnings)
 
 
-def test_without_a_depth_limit_the_output_is_inventori(scene):
+def test_silence_is_not_a_declaration(scene):
+    """Kolom yang terlewat berbeda dari posisi yang dinyatakan."""
     models, cfg, topo, dataset = scene
-    stripped = _declared(cfg).model_copy(update={
-        "rpeee_constraints": cfg.rpeee_constraints.model_copy(
-            update={"max_depth_m": None, "max_depth_basis": ""})})
-    report = limits.run(models, stripped, topo=topo, quality=dataset.quality)
-    assert stripped.max_depth_m is None
+    silent = _declared(cfg).model_copy(update={
+        "limits": cfg.limits.model_copy(update={
+            "depth": cfg.limits.depth.model_copy(
+                update={"no_depth_limit_basis": ""})})})
+    assert not silent.rpeee_demonstrated
+    assert silent.resource_label == "Inventori Batubara"
+    report = limits.run(models, silent, topo=topo, quality=dataset.quality)
     assert any("INVENTORI BATUBARA" in w for w in report.warnings)
+
+
+def test_a_depth_limit_and_its_absence_cannot_both_be_declared():
+    from coalres.config import DepthLimit
+    with pytest.raises(ValueError, match="tidak boleh diisi bersamaan"):
+        DepthLimit(max_depth_m=100.0, basis_kind="geoteknik",
+                   basis_note="Rekomendasi studi geoteknik lereng 2026 untuk batas.",
+                   no_depth_limit_basis="x" * 80)
+
+
+def test_declining_a_depth_limit_still_demands_a_reason():
+    from coalres.config import DepthLimit
+    with pytest.raises(ValueError, match="terlalu pendek"):
+        DepthLimit(no_depth_limit_basis="tidak perlu")

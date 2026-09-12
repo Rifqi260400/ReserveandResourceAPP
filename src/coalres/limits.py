@@ -237,11 +237,21 @@ def run(models: dict[str, SeamModel], cfg, topo=None,
             "dan catatan ini wajib muncul pada dokumen asumsi, laporan QA, dan "
             "header ringkasan Sumber daya.")
 
-    if cfg.max_depth_m is None:
+    declared_none = cfg.limits.depth.no_depth_limit_basis.strip()
+    if cfg.max_depth_m is None and declared_none:
+        report.notes.append(
+            "KCMI 4.6.3.2: batas kedalaman SENGAJA TIDAK diterapkan - posisi "
+            "yang dinyatakan, bukan kolom yang terlewat. Pedoman menulis CPI "
+            "'dapat menggunakan' acuan kedalaman, bukan wajib, dan klasifikasi "
+            "memang tidak bergantung kedalaman melainkan jarak dari titik "
+            f"pengamatan di bidang X-Y. Dasar: {declared_none}")
+    elif cfg.max_depth_m is None:
         report.warnings.append(
-            "KCMI 4.6.3.2: batas maksimum kedalaman belum dinyatakan. Tanpa "
-            "batas ekonomi, keluaran adalah INVENTORI BATUBARA, bukan Sumber "
-            "daya.")
+            "KCMI 4.6.3.2: batas maksimum kedalaman belum dinyatakan DAN tidak "
+            "ada pernyataan mengapa ia tidak diperlukan. Keprospekan beralasan "
+            "karena itu belum ditunjukkan, sehingga keluaran adalah INVENTORI "
+            "BATUBARA, bukan Sumber daya. Isi limits.depth.max_depth_m beserta "
+            "acuannya, atau limits.depth.no_depth_limit_basis.")
     elif cfg.limits.depth.max_depth_m is None:
         report.warnings.append(
             f"KCMI 4.6.3.2: batas kedalaman {cfg.max_depth_m:g} m berasal dari "

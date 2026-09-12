@@ -124,6 +124,9 @@ class RpeeeConstraints(_Strict):
         """Label yang menempel pada SETIAP keluaran (aturan 8.4)."""
         return "Sumberdaya" if self.has_economic_constraint else "Inventori Batubara"
 
+    # Catatan: label sebenarnya dibaca lewat Config.resource_label, yang juga
+    # menghormati posisi "tanpa batas kedalaman" yang dinyatakan di limits.depth.
+
     @property
     def class_prefix(self) -> str:
         return "Sumberdaya" if self.has_economic_constraint else "Inventori"
@@ -280,8 +283,26 @@ class DepthLimit(_Strict):
                         "geoteknik", "lainnya"] | None = None
     basis_note: str = ""
 
+    # Tidak memakai batas kedalaman adalah posisi yang SAH - KCMI 4.6.3.2
+    # menulis "dapat menggunakan", bukan "wajib". Klasifikasi memang tidak
+    # bergantung kedalaman; ia bergantung jarak dari titik pengamatan di bidang
+    # X-Y. Tetapi keprospekan beralasan (4.6) tetap harus ditunjukkan, jadi
+    # ketiadaan batas wajib DINYATAKAN beserta alasannya - bukan sekadar kosong.
+    # Diisi, keluaran tetap berlabel Sumber daya; dikosongkan, ia Inventori.
+    no_depth_limit_basis: str = ""
+
     @model_validator(mode="after")
     def _depth_needs_a_recognised_basis(self) -> "DepthLimit":
+        if self.max_depth_m is not None and self.no_depth_limit_basis.strip():
+            raise ValueError(
+                "limits.depth: max_depth_m dan no_depth_limit_basis tidak boleh "
+                "diisi bersamaan - pilih satu posisi.")
+        if self.no_depth_limit_basis.strip() and len(
+                self.no_depth_limit_basis.strip()) < 60:
+            raise ValueError(
+                "limits.depth.no_depth_limit_basis terlalu pendek (minimum 60 "
+                "karakter). Ketiadaan batas kedalaman adalah klaim keprospekan "
+                "beralasan dan harus beralasan.")
         if self.max_depth_m is not None:
             if self.basis_kind is None:
                 raise ValueError(
@@ -560,6 +581,17 @@ class Config(_Strict):
     def max_depth_m(self) -> float | None:
         """Batas kedalaman yang berlaku, satu-satunya."""
         return self.limits.depth.max_depth_m or self.rpeee_constraints.max_depth_m
+
+    @property
+    def rpeee_demonstrated(self) -> bool:
+        """Apakah keprospekan beralasan ditunjukkan - lewat batas, atau alasan."""
+        return (self.max_depth_m is not None
+                or bool(self.limits.depth.no_depth_limit_basis.strip()))
+
+    @property
+    def resource_label(self) -> str:
+        """Label yang menempel pada SETIAP keluaran."""
+        return "Sumberdaya" if self.rpeee_demonstrated else "Inventori Batubara"
 
     @model_validator(mode="after")
     def _minex_spec_required(self) -> "Config":
