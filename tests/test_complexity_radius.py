@@ -65,6 +65,42 @@ def test_the_table_matches_tabel_5_33_of_the_reference_report():
     }
 
 
+def test_the_assessment_is_the_only_road_to_a_radius(data):
+    """Urutan yang ditetapkan pemilik data: bobot dulu, baru radius.
+
+    Tidak ada masukan lain - variogram, jarak bor, setelan config - yang boleh
+    menggeser radius. Satu-satunya jalan lewat hasil pembobotan tahap 7.
+    """
+    dataset, cfg = data
+    reason = ("Diputus ke moderat sebagai arah konservatif karena bentang dan "
+              "dip belum diverifikasi penampang.")
+    assessment = complexity.assess(dataset, cfg, {INTRUSI[0]: INTRUSI[1:]})
+    assert radius.from_assessment(assessment) == radius.radii_for(assessment.condition)
+
+
+def test_without_a_weighting_there_is_no_radius():
+    class Unassessed:
+        condition = None
+    with pytest.raises(ValueError, match="belum menghasilkan kelas"):
+        radius.from_assessment(Unassessed())
+
+
+def test_a_variogram_range_never_becomes_a_radius():
+    """KCMI 4.5.3 dihitung, tetapi tempatnya di HULU formulir kompleksitas.
+
+    Ia mengisi skor 'kesinambungan' dengan angka, lalu pembobotan yang memilih
+    radius. Range tidak pernah jadi radius secara langsung.
+    """
+    import inspect
+    from coalres import variography
+    source = inspect.getsource(radius)
+    assert "variogram" not in source.lower().replace(
+        "variogram - bukti", "").split("def from_assessment")[0]
+    # Jalur satu-satunya dari variogram adalah usulan skor formulir.
+    assert hasattr(variography, "continuity_evidence")
+    assert "usul_kesinambungan" in inspect.getsource(variography.continuity_evidence)
+
+
 def test_config_radii_that_differ_from_the_table_are_reported():
     differences = radius.compare_to_table(
         "sederhana", {"terukur": 250.0, "tertunjuk": 1000.0, "tereka": 1500.0})

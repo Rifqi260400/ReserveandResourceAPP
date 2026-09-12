@@ -14,9 +14,16 @@ Pedoman Praktis KCMI 2017 pasal 4.5.3, dikutip utuh:
 Jadi urutannya: variabilitas per seam lebih dulu, tabel kompleksitas SNI
 sebagai CADANGAN ketika datanya kurang - bukan sebaliknya.
 
-Yang TIDAK dinyatakan pedoman, dan karena itu tidak diputuskan modul ini:
-bagaimana range variogram dipetakan menjadi ketiga radius kelas. Modul ini
-melaporkan range-nya; pemetaannya keputusan manusia yang tercatat.
+TEMPAT MODUL INI DALAM ALUR - ditetapkan pemilik data:
+
+    variogram  ->  skor 'kesinambungan' dan 'variasi' pada formulir kompleksitas
+               ->  pembobotan kompleksitas (tahap 7)
+               ->  satu baris pada tabel SNI 5015:2019  ->  radius
+
+Range variogram TIDAK PERNAH menjadi radius secara langsung. Radius hanya
+berasal dari pembobotan kompleksitas geologi. Yang disumbangkan modul ini
+adalah bukti terukur untuk mengisi formulir itu - menggantikan taksiran dengan
+angka - bukan jalan pintas melewatinya.
 """
 from __future__ import annotations
 
@@ -206,6 +213,27 @@ def analyse(intersections: pd.DataFrame, collars: pd.DataFrame,
         arr = np.asarray(rows, float)
         out[str(seam)] = for_seam(str(seam), arr[:, :2], arr[:, 2], min_data)
     return out
+
+
+def continuity_evidence(variograms: dict[str, Variogram]) -> pd.DataFrame:
+    """Bukti terukur untuk skor 'kesinambungan' pada formulir kompleksitas.
+
+    Range variogram adalah ukuran kesinambungan lateral yang paling langsung:
+    jarak sebelum dua titik berhenti saling memberi tahu. Tabel 5-32 memakai
+    kata "ribuan meter / ratusan meter / puluhan meter"; kolom di bawah
+    menerjemahkan range menjadi kata itu - sebagai USULAN untuk formulir, bukan
+    sebagai radius.
+    """
+    rows = []
+    for v in variograms.values():
+        if v.range_usable and np.isfinite(v.range_m):
+            skor = ("sederhana" if v.range_m >= 1000
+                    else "moderat" if v.range_m >= 100 else "kompleks")
+            bukti = f"range variogram {v.range_m:.0f} m ({v.n_data} data)"
+        else:
+            skor, bukti = None, f"range tidak dapat dipakai - {v.note}"
+        rows.append({"seam": v.seam, "usul_kesinambungan": skor, "bukti": bukti})
+    return pd.DataFrame(rows)
 
 
 def summary(variograms: dict[str, Variogram]) -> pd.DataFrame:

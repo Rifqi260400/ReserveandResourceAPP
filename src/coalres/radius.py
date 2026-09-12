@@ -60,6 +60,28 @@ def radii_for(condition: GeologicalCondition) -> dict[str, float]:
     return dict(SNI_5015_2019_RADII_M[condition])
 
 
+def from_assessment(assessment) -> dict[str, float]:
+    """SATU-SATUNYA jalan dari penilaian menuju radius.
+
+    Urutannya ditetapkan pemilik data dan tidak dapat dilewati: pembobotan
+    kompleksitas geologi dijalankan lebih dulu (tahap 7), hasilnya memilih satu
+    baris pada tabel SNI 5015:2019. Tidak ada masukan lain - variogram, jarak
+    bor, maupun setelan konfigurasi - yang boleh menggeser radius.
+
+    Variogram (KCMI 4.5.3) tetap dihitung, tetapi tempatnya di HULU: ia bukti
+    pendukung bagi skor 'kesinambungan' dan 'variasi' pada formulir kompleksitas.
+    Ia memengaruhi radius hanya lewat skor itu, tidak pernah langsung.
+    """
+    condition = getattr(assessment, "condition", None)
+    if condition is None:
+        raise ValueError(
+            "penilaian kompleksitas belum menghasilkan kelas. Radius tidak dapat "
+            "ditentukan sebelum pembobotan tahap 7 selesai - tidak ada kelas "
+            "bawaan."
+        )
+    return radii_for(condition)
+
+
 def compare_to_table(condition: GeologicalCondition,
                      configured: dict[str, float]) -> list[str]:
     """Selisih antara radius di konfigurasi dan tabel standar.
