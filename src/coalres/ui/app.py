@@ -92,6 +92,7 @@ def _complexity_form(stages) -> None:
 
     with st.form("kompleksitas"):
         chosen: dict[str, tuple[str, str]] = {}
+        incomplete: list[str] = []
         for group, params in cx.FORM.items():
             st.markdown(f"**Aspek {group}**")
             for parameter, wording in params.items():
@@ -108,18 +109,48 @@ def _complexity_form(stages) -> None:
                 justification = columns[2].text_area(
                     parameter, value=stored.get(parameter, ("", ""))[1],
                     height=68, label_visibility="collapsed",
-                    placeholder=(f"Usulan: {suggestion.evidence}"
-                                 if suggestion else
-                                 f"Justifikasi (min {cx.JUSTIFICATION_MIN_CHARS} karakter)"),
+                    placeholder=(f"Justifikasi - minimum "
+                                 f"{cx.JUSTIFICATION_MIN_CHARS} karakter"),
                     key=f"just_{parameter}")
-                if suggestion:
+
+                # Panjang justifikasi ditampilkan HIDUP. Sebelumnya syarat 40
+                # karakter hanya muncul di pesan kegagalan setelah dikirim, dan
+                # pesan itu mirip dengan pesan "belum dinyatakan" - sehingga
+                # tampak seperti tombolnya tidak bekerja.
+                written = len(justification.strip())
+                if written and written < cx.JUSTIFICATION_MIN_CHARS:
+                    columns[2].caption(
+                        f":red[{written}/{cx.JUSTIFICATION_MIN_CHARS} karakter - "
+                        "masih kurang, baris ini akan ditolak]")
+                elif written:
+                    columns[2].caption(f":green[{written} karakter - cukup]")
+
+                if suggestion and suggestion.assessable:
                     st.caption(f"{wording[score] if score else ''} - "
                                f"usulan otomatis: {suggestion.evidence}. "
                                f"Ambang: {suggestion.threshold}")
-                if score and justification.strip():
+                elif suggestion:
+                    st.caption(f":orange[WAJIB DIISI] - {suggestion.evidence}")
+
+                if score and written >= cx.JUSTIFICATION_MIN_CHARS:
                     chosen[parameter] = (score, justification.strip())
+                elif score and written:
+                    incomplete.append(
+                        f"{parameter}: justifikasi {written} karakter, minimum "
+                        f"{cx.JUSTIFICATION_MIN_CHARS}")
         submitted = st.form_submit_button("Terapkan dan jalankan ulang tahap 7-10",
                                           type="primary")
+    if submitted and incomplete:
+        st.error("Belum dijalankan - justifikasi berikut terlalu pendek:\n\n"
+                 + "\n".join(f"- {line}" for line in incomplete)
+                 + "\n\nPanjangkan lalu tekan tombolnya lagi.")
+        return
+    if submitted and not chosen:
+        st.error(
+            "Belum dijalankan - tidak ada subaspek yang terisi lengkap. Tiap "
+            "baris menuntut ceklis DAN justifikasi sekurangnya "
+            f"{cx.JUSTIFICATION_MIN_CHARS} karakter.")
+        return
     if submitted:
         with st.spinner("Menjalankan ulang..."):
             st.session_state["stages"] = pipeline.run(
