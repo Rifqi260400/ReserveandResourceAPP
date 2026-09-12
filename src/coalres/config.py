@@ -172,6 +172,12 @@ class MinexSpec(_Strict):
     # dihentikan - lihat audit G2.
     quality_column_basis: dict[str, QualityBasis] = Field(default_factory=dict)
 
+    # Ketika basis yang dinyatakan bertentangan dengan bukti korelasi atau
+    # kelayakan fisik, run dihentikan. Diisi, string ini MENIMPA penghentian itu
+    # - tetapi pertentangannya tetap dicetak pada audit dan ikut ke keluaran,
+    # sehingga keputusannya terlihat, bukan hilang.
+    quality_basis_override_basis: str = ""
+
     # Interval kualitas terbalik (to <= from) adalah cacat data. Perbaikannya
     # bukan urusan kode - menukar from dan to akan menebak niat penulisnya.
     #   stop    : hentikan run (bawaan)
@@ -259,6 +265,11 @@ class WeatheringSpec(_Strict):
 class ValidationSettings(_Strict):
     collar_vs_topo_tolerance_m: float = Field(gt=0)
     mass_balance_tolerance_pct: float = Field(gt=0)
+
+    # Proksimat yang tidak menutup 100% menghentikan run. Diisi, string ini
+    # menimpa penghentian itu - dipakai ketika datanya memang sintetis dan
+    # ketidakkonsistenannya sudah diketahui. Temuannya tetap dicetak.
+    proximate_closure_waiver_basis: str = ""
 
 
 class DxfExportSettings(_Strict):

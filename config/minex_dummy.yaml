@@ -52,6 +52,21 @@ minex:
   quality_moisture_basis: unknown
   quality_cv_unit: kcal/kg
   on_invalid_quality_interval: exclude
+  quality_column_basis:
+    RD: adb
+    MOISTURE: adb
+    ASH: adb
+    VM: adb
+    FC: adb
+    TS: adb
+    CV: adb
+  quality_basis_override_basis: 'Dinyatakan pemilik data pada 2026-09-12 setelah melihat bukti
+    korelasi: kolom 11 adalah CV basis adb. Bukti yang bertentangan tetap dicatat dan ikut
+    ke keluaran: r(ASH,CV) = -0,200 apa adanya sedangkan -0,867 setelah diperlakukan daf;
+    dan bila adb, CV daf tersirat mencapai 12.864 kcal/kg pada 2 sampel, di atas batas fisik
+    batubara. Catatan: uji basis ini bertumpu pada faktor (100-M-ASH)/100, sedangkan proksimat
+    pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
+    diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
 core_loss_treatment: as_coal
@@ -63,12 +78,12 @@ seam_splits:
   - A1
   - A2
 geological_condition: moderat
-geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis
-  untuk menjalankan dataset dummy dan HARUS diganti. Yang teramati dari data: spasi
-  bor median 119 m, seam B menerus di 59 dari 60 lubang, seam A terpecah menjadi A1
-  dan A2 pada sebagian area, dan terdapat satu jejak sesar (faults01). Penilaian sebenarnya
-  wajib menguraikan kontinuitas seam antar lubang, throw dan rapat sesar, variasi
-  ketebalan lateral, serta besaran dan keseragaman dip, dengan bukti penampang.'
+geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan
+  dataset dummy dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
+  menerus di 59 dari 60 lubang, seam A terpecah menjadi A1 dan A2 pada sebagian area, dan
+  terdapat satu jejak sesar (faults01). Penilaian sebenarnya wajib menguraikan kontinuitas
+  seam antar lubang, throw dan rapat sesar, variasi ketebalan lateral, serta besaran dan keseragaman
+  dip, dengan bukti penampang.'
 classification_radii_m:
   sederhana:
     measured: 500
@@ -84,7 +99,7 @@ classification_radii_m:
     inferred: 400
 cutoffs:
   min_seam_thickness_m: 0.4
-  max_parting_thickness_m: 0.3
+  max_parting_thickness_m: 0.1
   min_core_recovery_pct: 90
   min_quality_coverage_frac: 0.9
 validation:
@@ -92,11 +107,10 @@ validation:
   mass_balance_tolerance_pct: 0.5
 rpeee_constraints:
   max_depth_m: 100.0
-  max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji
-    jalur pelaporan Sumberdaya sampai ujung pada dataset dummy, bukan dari studi kelayakan,
-    batas pit blok sekitar, maupun batas stripping ratio. Pada data produksi, angka
-    ini WAJIB diganti dengan batas yang punya dasar ekonomi nyata dan dasar itu dinyatakan
-    di sini.
+  max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji jalur
+    pelaporan Sumberdaya sampai ujung pada dataset dummy, bukan dari studi kelayakan, batas
+    pit blok sekitar, maupun batas stripping ratio. Pada data produksi, angka ini WAJIB diganti
+    dengan batas yang punya dasar ekonomi nyata dan dasar itu dinyatakan di sini.
   min_cv_ar_kcal_kg: null
   max_ash_adb_pct: null
   excluded_area_wkt: ''
@@ -119,3 +133,21 @@ maps:
 estimation_method: voronoi
 block_boundary_wkt: ''
 assumed_rd_t_per_m3: 1.3
+weathering:
+  marker_seam: W
+  provenance: assumed
+  provenance_basis: 'Dinyatakan asumsi oleh pemilik data pada 2026-09-12. Dasar dari data:
+    kedalaman 3,00 m berulang pada 54 dari 60 lubang (90%), sisanya 2,0 m (3 lubang), 2,5
+    m (2) dan 4,0 m (1). Sebaran terpusat pada satu nilai adalah ciri konstanta yang diketikkan,
+    bukan pembacaan log per lubang. Angka ini WAJIB tampil sebagai asumsi pemodelan pada setiap
+    keluaran, bukan sebagai data terukur. Sebagai pembanding, laporan Bab 5 PT SGM menetapkan
+    tebal zona pelapukan rata-rata 3,5 m dari analisa log bor dan log geofisika - provenance
+    semacam itulah yang belum ada di sini.'
+  constant_depth_m: 3.0
+observation_point:
+  requires_quality: true
+  basis: 'Dinyatakan pemilik data pada 2026-09-12. SNI 5015:2019 menuntut ketebalan DAN kualitas
+    pada titik observasi, sehingga lubang tanpa data kualitas tidak menaikkan kelas. Konsekuensi
+    pada dataset ini: titik observasi turun dari 60 menjadi 18 lubang, dan luas Terukur (dijumlahkan
+    antar seam) turun dari 500 ha menjadi 365 ha, 27% lebih kecil. Pilihan yang lebih longgar
+    - cukup ketebalan - akan menaikkan kelas atas dasar geometri semata dan ditolak.'

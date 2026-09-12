@@ -24,11 +24,33 @@ def _run(path: Path) -> AuditReport:
     return run_gate2(load_minex(cfg), cfg, AuditReport())
 
 
+def _undeclared_config() -> Config:
+    """config/minex_dummy.yaml dengan seluruh deklarasi dicabut kembali.
+
+    Dibangun di sini, bukan dibaca dari berkas, supaya uji "gerbang terbuka
+    ketika belum dinyatakan" tidak ikut berubah setiap kali satu keputusan
+    dimasukkan ke konfigurasi kerja.
+    """
+    cfg = Config.load(GATED)
+    cfg.seam_policy = cfg.seam_policy.model_copy(
+        update={"collision_resolution": "undeclared", "collision_basis": ""})
+    cfg.weathering = cfg.weathering.model_copy(
+        update={"provenance": "unknown", "provenance_basis": ""})
+    cfg.observation_point = cfg.observation_point.model_copy(
+        update={"requires_quality": None, "basis": ""})
+    cfg.minex = cfg.minex.model_copy(
+        update={"quality_column_basis": {}, "quality_basis_override_basis": ""})
+    cfg.validation = cfg.validation.model_copy(
+        update={"proximate_closure_waiver_basis": ""})
+    return cfg
+
+
 @pytest.fixture(scope="module")
 def gated() -> AuditReport:
     if not GATED.exists():
         pytest.skip("dataset minex tidak tersedia")
-    return _run(GATED)
+    cfg = _undeclared_config()
+    return run_gate2(load_minex(cfg), cfg, AuditReport())
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +66,8 @@ def _checks(report: AuditReport, severity: Severity) -> set[str]:
 
 def test_undeclared_config_opens_every_gate(gated):
     assert _checks(gated, Severity.STOP) == {
-        "G1_seam_collision", "G2_quality_basis", "G4_weathering", "G6_populations"
+        "G1_seam_collision", "G2_quality_basis", "G4_weathering",
+        "G6_populations", "G7_proximate",
     }
 
 
@@ -75,12 +98,52 @@ def test_ash_cv_correlation_exposes_a_daf_column(gated):
                if f.check == "G2_quality_basis")
 
 
+def test_the_ash_cv_test_leans_on_a_factor_the_data_does_not_support(gated):
+    """Batas uji abu-kalori, dicatat agar tidak dilupakan.
+
+    Konversi daf memakai faktor (100 - M - ASH)/100. Faktor itu hanya sah bila
+    proksimat menutup 100%; di sini ia menutup 86%. Jadi bukti korelasi bersifat
+    menunjuk, bukan membuktikan - dan G7 wajib diselesaikan lebih dulu.
+    """
+    proximate = gated.tables["proximate_closure"].iloc[0]
+    assert proximate["jumlah_median_pct"] < 99.5
+    assert "G7_proximate" in _checks(gated, Severity.STOP)
+
+
 def test_declaring_adb_against_the_evidence_still_stops():
     cfg = Config.load(RESOLVED)
-    cfg.minex.quality_column_basis = {**cfg.minex.quality_column_basis, "CV": "adb"}
+    cfg.minex = cfg.minex.model_copy(update={
+        "quality_column_basis": {**cfg.minex.quality_column_basis, "CV": "adb"}})
     report = run_gate2(load_minex(cfg), cfg, AuditReport())
     stops = [f for f in report.of(Severity.STOP) if f.check == "G2_quality_basis"]
     assert stops and "BERTENTANGAN" in stops[0].message
+
+
+def test_an_override_downgrades_the_contradiction_but_never_hides_it():
+    """Menimpa gerbang boleh; menghilangkan temuannya tidak."""
+    cfg = Config.load(RESOLVED)
+    cfg.minex = cfg.minex.model_copy(update={
+        "quality_column_basis": {**cfg.minex.quality_column_basis, "CV": "adb"},
+        "quality_basis_override_basis": "Dinyatakan pemilik data setelah melihat bukti."})
+    report = run_gate2(load_minex(cfg), cfg, AuditReport())
+    assert not [f for f in report.of(Severity.STOP) if f.check == "G2_quality_basis"]
+    warns = [f for f in report.of(Severity.WARN) if f.check == "G2_quality_basis"]
+    assert warns and "BERTENTANGAN" in warns[0].message
+    assert "DITIMPA" in warns[0].message
+
+
+def test_proximate_does_not_close_on_this_dataset(gated):
+    """Uji yang tidak bergantung basis: M + ASH + VM + FC harus 100%.
+
+    Pada data ini jumlahnya 86%. Selama kekurangan 14% itu belum dijelaskan,
+    setiap uji basis - termasuk uji abu-kalori di atas - bertumpu pada kolom
+    yang belum tentu benar.
+    """
+    row = gated.tables["proximate_closure"].iloc[0]
+    assert row["n_sampel"] == 116
+    assert row["jumlah_median_pct"] == 86.0
+    assert row["kekurangan_median_pct"] == 14.0
+    assert "G7_proximate" in _checks(gated, Severity.STOP)
 
 
 def test_weathering_constant_is_detected_as_a_typed_number(gated):
@@ -88,6 +151,29 @@ def test_weathering_constant_is_detected_as_a_typed_number(gated):
     assert table.loc[3.0] == 54 and table.sum() == 60
     assert any("54 dari 60" in f.message for f in gated.of(Severity.STOP)
                if f.check == "G4_weathering")
+
+
+def test_the_working_config_records_weathering_as_an_assumption():
+    cfg = Config.load(GATED)
+    assert cfg.weathering.provenance == "assumed"
+    assert cfg.weathering.constant_depth_m == 3.0
+    assert len(cfg.weathering.provenance_basis.strip()) > 100
+
+
+def test_the_working_config_requires_quality_at_observation_points():
+    cfg = Config.load(GATED)
+    assert cfg.observation_point.requires_quality is True
+    assert len(cfg.observation_point.basis.strip()) > 100
+
+
+def test_the_ten_centimetre_rule_makes_a1_and_a2_separate_seams():
+    """Aturan pemilik data: interburden > 10 cm adalah seam berbeda.
+
+    IB A1<->A2 paling tipis pun 40 cm, jadi keduanya seam berbeda di SELURUH
+    25 lubang - menggabungkannya akan menelan parting median 3,40 m.
+    """
+    cfg = Config.load(GATED)
+    assert cfg.cutoffs.max_parting_thickness_m == 0.10
 
 
 def test_barren_hole_is_carried_through_as_evidence(gated):

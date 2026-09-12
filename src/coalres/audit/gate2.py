@@ -198,17 +198,81 @@ def check_quality_basis(dataset: HoleDataset, cfg: Config, report: AuditReport) 
                    message + f" Basis kolom '{cv}' belum dinyatakan di konfigurasi.",
                    remedy=f"Nyatakan minex.quality_column_basis['{cv}'].")
     elif declared_cv != verdict:
+        override = cfg.minex.quality_basis_override_basis.strip()
         report.add(
-            Severity.STOP, "G2_quality_basis",
+            Severity.WARN if override else Severity.STOP, "G2_quality_basis",
             message + f" Ini BERTENTANGAN dengan basis yang dinyatakan "
             f"('{declared_cv}'). Melaporkan nilai daf sebagai adb "
-            "melebih-lebihkan kalori jual, dan rata-rata tertimbangnya tidak sah.",
+            "melebih-lebihkan kalori jual, dan rata-rata tertimbangnya tidak sah."
+            + (f" DITIMPA oleh keputusan manusia: {override[:300]}" if override
+               else ""),
             remedy=f"Perbaiki minex.quality_column_basis['{cv}'] menjadi "
-                   f"'{verdict}', atau tunjukkan sertifikat yang menyanggah.",
+                   f"'{verdict}', tunjukkan sertifikat yang menyanggah, atau isi "
+                   "minex.quality_basis_override_basis.",
         )
     else:
         report.add(Severity.INFO, "G2_quality_basis",
                    message + f" Sesuai dengan basis yang dinyatakan ('{declared_cv}').")
+
+
+def check_proximate_closure(dataset: HoleDataset, cfg: Config, report: AuditReport) -> None:
+    """M + ASH + VM + FC harus menutup 100%, pada basis apa pun.
+
+    Pemeriksaan ini TIDAK bergantung pada basis. Apa pun jawabannya untuk adb
+    melawan daf, analisis proksimat pada satu basis selalu berjumlah 100%. Bila
+    tidak, salah satu kolom bukan yang tertulis di namanya - dan itu pertanyaan
+    yang harus dijawab lebih dulu daripada pertanyaan basis.
+    """
+    quality = dataset.quality
+    if quality is None:
+        return
+    names = {"moisture": ("MOISTURE", "M_adb", "IM"), "ash": ("ASH", "ASH_adb"),
+             "vm": ("VM", "VM_adb"), "fc": ("FC", "FC_adb")}
+    picked = {}
+    for role, options in names.items():
+        column = next((c for c in options if c in quality.columns), None)
+        if column is None:
+            report.add(Severity.WARN, "G7_proximate",
+                       f"uji penutupan proksimat dilewati: kolom {role} tidak dikenali.")
+            return
+        picked[role] = column
+
+    total = quality[list(picked.values())].sum(axis=1, min_count=4).dropna()
+    if total.empty:
+        return
+    gap = 100.0 - total
+    report.tables["proximate_closure"] = pd.DataFrame([{
+        "kolom": " + ".join(picked.values()), "n_sampel": len(total),
+        "jumlah_median_pct": round(float(total.median()), 2),
+        "jumlah_min_pct": round(float(total.min()), 2),
+        "jumlah_maks_pct": round(float(total.max()), 2),
+        "kekurangan_median_pct": round(float(gap.median()), 2),
+    }])
+
+    tolerance = cfg.validation.mass_balance_tolerance_pct
+    off = (total - 100.0).abs() > tolerance
+    if not off.any():
+        report.add(Severity.INFO, "G7_proximate",
+                   f"proksimat menutup pada {len(total)} sampel "
+                   f"(median {total.median():.2f}%).")
+        return
+
+    waiver = cfg.validation.proximate_closure_waiver_basis.strip()
+    report.add(
+        Severity.WARN if waiver else Severity.STOP, "G7_proximate",
+        f"{' + '.join(picked.values())} berjumlah median {total.median():.2f}% "
+        f"pada {len(total)} sampel, bukan 100% - kekurangan median "
+        f"{gap.median():.2f}%. Seluruh {int(off.sum())} sampel meleset, dan "
+        "kekurangan yang SERAGAM seperti ini bukan galat per sampel: ia berarti "
+        "salah satu kolom bukan yang tertulis di namanya, atau ada komponen yang "
+        "tidak ikut terbaca. Pertanyaan ini mendahului pertanyaan basis - selama "
+        "proksimat tidak menutup, konversi basis apa pun bertumpu pada kolom yang "
+        "belum tentu benar."
+        + (f" DITIMPA oleh keputusan manusia: {waiver[:300]}" if waiver else ""),
+        remedy="Konfirmasi arti kolom 6-9 ke sertifikat laboratorium. Bila data "
+               "ini sintetis dan memang tidak konsisten secara fisik, nyatakan itu "
+               "agar tidak dibaca sebagai temuan.",
+    )
 
 
 def check_duplicate_records(dataset: HoleDataset, report: AuditReport) -> None:
@@ -434,6 +498,7 @@ def check_hole_populations(dataset: HoleDataset, cfg: Config, report: AuditRepor
 def run_gate2(dataset: HoleDataset, cfg: Config, report: AuditReport) -> AuditReport:
     check_seam_collision(dataset, cfg, report)
     check_quality_basis(dataset, cfg, report)
+    check_proximate_closure(dataset, cfg, report)
     check_duplicate_records(dataset, report)
     check_weathering(dataset, cfg, report)
     check_barren_holes(dataset, cfg, report)

@@ -54,6 +54,7 @@ def cfg(base_config_dict, write_config, minex_dir):
     base_config_dict["weathering"] = {
         "marker_seam": "W", "provenance": "assumed",
         "provenance_basis": fixture_basis, "constant_depth_m": 3.0}
+    base_config_dict["validation"]["proximate_closure_waiver_basis"] = fixture_basis
     base_config_dict["observation_point"] = {
         "requires_quality": False, "basis": fixture_basis}
     base_config_dict["minex"]["quality_column_basis"] = {

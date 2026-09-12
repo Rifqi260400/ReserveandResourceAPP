@@ -101,6 +101,7 @@ cutoffs:
 validation:
   collar_vs_topo_tolerance_m: 2.0
   mass_balance_tolerance_pct: 0.5
+  proximate_closure_waiver_basis: FIXTURE UJI - bukan keputusan pengguna; lihat config/minex_dummy.yaml.
 rpeee_constraints:
   max_depth_m: 100.0
   max_depth_basis: LATIHAN - BUKAN PENILAIAN EKONOMI. Batas 100 m dipilih untuk menguji jalur
