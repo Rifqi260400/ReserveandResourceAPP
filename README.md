@@ -1,5 +1,33 @@
 # ReserveandResourceAPP
 
+## Menjalankan antarmuka
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src python3 -m coalres.cli ui --config config/minex_dummy.yaml
+```
+
+Browser terbuka sendiri di `http://localhost:8501`. Tambahkan `--port 8600`
+untuk memakai porta lain.
+
+Tanpa antarmuka:
+
+```bash
+PYTHONPATH=src python3 -m coalres.cli audit --config config/minex_dummy.yaml
+```
+
+Konfigurasi yang tersedia:
+
+| Berkas | Isi |
+|---|---|
+| `config/minex_dummy.yaml` | konfigurasi kerja; gerbang tahap 7 menunggu ceklis intrusi |
+| `config/minex_demo_lengkap.yaml` | seluruh keputusan terisi, berjalan sampai ekspor |
+| `config/template.yaml` | titik awal untuk data baru |
+
+Gerbang tidak dapat dimatikan dari antarmuka maupun dari baris perintah. Run
+yang berhenti tidak menghasilkan keluaran.
+
+
 Estimasi sumberdaya batubara in-situ dengan metode **poligon pengaruh (Voronoi)**
 dibatasi radius klasifikasi, dengan metode **titik observasi sirkular** sebagai
 alternatif, diklasifikasikan menurut **SNI 5015:2019**.
