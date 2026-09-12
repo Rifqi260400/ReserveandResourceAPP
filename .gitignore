@@ -2,8 +2,6 @@
 .pytest_cache/
 .venv/
 __pycache__/
-data/minex/topo.dat
-data/minex/topodig.dxf
 output/
 sample_data/las/
 sample_data/quality.csv
