@@ -174,6 +174,28 @@ def read_topo_dat(path: Path) -> np.ndarray:
     return np.unique(points.to_numpy(float), axis=0)
 
 
+def _apply_seam_aliases(
+    frame: pd.DataFrame, aliases: dict[str, str], label: str
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Ganti nama seam sesuai peta alias, laporkan berapa baris terkena.
+
+    Penggantian dilakukan SEKALI di titik pembacaan, bukan tersebar di hilir,
+    supaya tidak ada modul yang melihat dua penamaan untuk seam yang sama.
+    """
+    if not aliases or "seam" not in frame.columns:
+        return frame, {}
+    applied: dict[str, int] = {}
+    for source, target in aliases.items():
+        mask = frame["seam"].str.upper() == source.strip().upper()
+        count = int(mask.sum())
+        if count:
+            frame.loc[mask, "seam"] = target
+            applied[f"{source} -> {target}"] = count
+    if applied:
+        log.info(f"{label}: alias seam diterapkan {applied}")
+    return frame, applied
+
+
 def load_minex(cfg) -> HoleDataset:
     """Muat seluruh berkas Minex sesuai konfigurasi."""
     spec = cfg.minex
@@ -184,10 +206,16 @@ def load_minex(cfg) -> HoleDataset:
                                         spec.marker_seams)
     provenance["duplicate_rows_removed"] = {"survey": dup_surv, "lithology": dup_lit}
 
+    intervals, alias_lit = _apply_seam_aliases(intervals, spec.seam_aliases, "lithology")
+
     quality = None
     if spec.quality_file is not None:
         quality, dup_qual = read_quality(spec.quality_file, spec.quality_columns)
         provenance["duplicate_rows_removed"]["quality"] = dup_qual
+        quality, alias_qual = _apply_seam_aliases(quality, spec.seam_aliases, "quality")
+        provenance["seam_aliases"] = {"lithology": alias_lit, "quality": alias_qual}
+    else:
+        provenance["seam_aliases"] = {"lithology": alias_lit}
 
     topo_points = None
     if spec.topography_file is not None:

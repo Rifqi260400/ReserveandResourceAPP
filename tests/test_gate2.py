@@ -65,9 +65,10 @@ def _checks(report: AuditReport, severity: Severity) -> set[str]:
 
 
 def test_undeclared_config_opens_every_gate(gated):
+    # G1 tidak lagi muncul: penggantian nama A -> A1 menghapus tabrakannya di
+    # akar, bukan menyelesaikannya dengan aturan hitung.
     assert _checks(gated, Severity.STOP) == {
-        "G1_seam_collision", "G2_quality_basis", "G4_weathering",
-        "G6_populations", "G7_proximate",
+        "G2_quality_basis", "G4_weathering", "G6_populations", "G7_proximate",
     }
 
 
@@ -75,17 +76,48 @@ def test_declaring_the_decisions_closes_every_gate(resolved):
     assert resolved.of(Severity.STOP) == []
 
 
-def test_parent_child_collision_is_areal_not_per_hole(gated):
-    """Tidak satu pun lubang memuat A dan A1/A2 sekaligus.
+def test_renaming_removed_the_collision_at_the_root(gated):
+    """Tabrakan induk-anak sudah tidak ada pada konfigurasi kerja.
 
-    Justru itu sebabnya pemeriksaan per lubang tidak menemukan apa pun, dan
-    tesselasi terpisah menghitung area yang sama dua kali.
+    Sebelumnya seam 'A' di 23 lubang bertabrakan dengan 'A1'/'A2' di 30 lubang,
+    hull bertumpang 94,8 ha. Pemilik data menyatakan 'A' adalah seam yang MASIH
+    MENYATU, jadi ia dinamai ulang 'A1'. Penamaan ulang menghapus tabrakannya
+    di akar - tidak ada lagi induk dan anak yang menempati ruang yang sama -
+    bukan menutupinya dengan aturan hitung.
     """
-    row = gated.tables["seam_collision"].iloc[0]
+    assert "seam_collision" not in gated.tables
+    assert not [f for f in gated.of(Severity.STOP) if f.check == "G1_seam_collision"]
+    assert any("tidak ada seam induk" in f.message
+               for f in gated.of(Severity.INFO) if f.check == "G1_seam_collision")
+
+
+def test_the_alias_is_applied_once_at_read_time(gated):
+    cfg = Config.load(GATED)
+    dataset = load_minex(cfg)
+    applied = dataset.provenance["seam_aliases"]
+    assert applied["lithology"] == {"A -> A1": 23}
+    assert applied["quality"] == {"A -> A1": 44}
+    body = dataset.intervals[~dataset.intervals["is_marker"]]
+    assert "A" not in set(body["seam"])
+    assert body[body["seam"] == "A1"]["hole_id"].nunique() == 48
+    assert body[body["seam"] == "A2"]["hole_id"].nunique() == 30
+
+
+def test_the_collision_detector_still_fires_when_a_collision_exists():
+    """Detektornya tidak dilemahkan - hanya datanya yang berubah."""
+    cfg = Config.load(GATED)
+    cfg.minex = cfg.minex.model_copy(update={"seam_aliases": {}})
+    cfg.stratigraphy = ["A", "B"]
+    cfg.seam_splits = {"A": ["A1", "A2"]}
+    cfg.seam_policy = cfg.seam_policy.model_copy(
+        update={"collision_resolution": "undeclared", "collision_basis": ""})
+    report = run_gate2(load_minex(cfg), cfg, AuditReport())
+    row = report.tables["seam_collision"].iloc[0]
     assert row["induk"] == "A" and row["anak"] == "A1, A2"
     assert row["lubang_keduanya"] == 0
     assert row["lubang_induk"] == 23 and row["lubang_anak"] == 30
     assert row["luas_hull_bertumpang_ha"] > 50
+    assert "G1_seam_collision" in {f.check for f in report.of(Severity.STOP)}
 
 
 def test_ash_cv_correlation_exposes_a_daf_column(gated):

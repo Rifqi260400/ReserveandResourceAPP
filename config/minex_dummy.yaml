@@ -67,16 +67,16 @@ minex:
     batubara. Catatan: uji basis ini bertumpu pada faktor (100-M-ASH)/100, sedangkan proksimat
     pada data ini hanya menutup 86,25%, sehingga bukti korelasi TIDAK konklusif. Yang harus
     diselesaikan lebih dulu adalah kekurangan 13,75% itu (gerbang G7).'
+  seam_aliases:
+    A: A1
 authoritative_coordinate_source: collar_ts
 coal_thickness_source: lithology
 core_loss_treatment: as_coal
 stratigraphy:
-- A
+- A1
+- A2
 - B
-seam_splits:
-  A:
-  - A1
-  - A2
+seam_splits: {}
 geological_condition: moderat
 geological_condition_justification: 'PLACEHOLDER - BUKAN PENILAIAN GEOLOG. Ditulis untuk menjalankan
   dataset dummy dan HARUS diganti. Yang teramati dari data: spasi bor median 119 m, seam B
@@ -160,14 +160,12 @@ observation_point:
     - cukup ketebalan - akan menaikkan kelas atas dasar geometri semata dan ditolak.'
 seam_policy:
   collision_resolution: treat_as_distinct
-  collision_basis: 'Aturan pemilik data 2026-09-12: interburden >10 cm adalah seam berbeda,
-    <10 cm adalah parting. IB A1<->A2 paling tipis 40 cm pada 25 dari 25 lubang, jadi A1 dan
-    A2 seam berbeda - merge_children gugur karena akan menelan parting median 3,40 m. A, A1,
-    dan A2 dilaporkan sebagai tiga seam terpisah yang berbagi SATU tesselasi per unit stratigrafi,
-    sehingga tidak ada hitung ganda: tiap sel Voronoi hanya milik satu lubang, dan tiap lubang
-    hanya melog salah satu pola. TERSISA sebagai asumsi yang wajib dilaporkan: 23 lubang ber-''A''
-    dilog satu interval tanpa struktur internal, tebal median 14,49 m. Itu mendekati envelope
-    A1+parting+A2 (14,19 m) ketimbang batubara bersih A1+A2 (10,79 m), sehingga ''A'' DIDUGA
-    memuat parting ~3,4 m yang belum dikurangkan. Dugaan ini tidak konklusif - median tidak
-    berpasangan. Keluaran wajib melaporkan tonase seam A dua versi: as-logged dan dikurangi
-    parting.'
+  collision_basis: 'Diselesaikan pemilik data 2026-09-12 dengan mengganti penamaan, bukan
+    dengan aturan hitung. Seam yang dilog ''A'' di 23 lubang adalah seam yang MASIH MENYATU;
+    di 30 lubang lain ia memecah menjadi dua. Karena itu ''A'' dinamai ulang ''A1'' - leaf
+    atas - sehingga A1 hadir di 48 lubang dan A2 di 30 lubang. Tidak ada lagi induk yang bertabrakan
+    dengan anaknya, sehingga tidak ada lagi dua tesselasi yang menutup area yang sama. Dugaan
+    saya sebelumnya bahwa tebal 14,49 m memuat parting 3,4 m yang belum dikurangkan DIBATALKAN
+    oleh pemilik data: itu batubara menyatu. Konsekuensi yang harus ditangani tahap 4: tebal
+    A1 bimodal - 14,49 m di 23 lubang menyatu lawan 2,20 m di 25 lubang terpecah - sehingga
+    garis split wajib dimodelkan sebagai batas, bukan diinterpolasi mulus.'

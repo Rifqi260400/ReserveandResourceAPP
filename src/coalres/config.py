@@ -151,6 +151,14 @@ class MinexSpec(_Strict):
     # Baris berketebalan nol yang menandai horizon, bukan seam (mis. 'W').
     marker_seams: list[str] = Field(default_factory=list)
 
+    # Penggantian nama seam saat pembacaan, {nama_di_berkas: nama_dipakai}.
+    # Dipakai ketika penamaan di berkas tidak mencerminkan korelasi yang
+    # disepakati - misalnya seam yang menyatu dilog 'A' sementara di tempat
+    # lain ia memecah menjadi 'A1' dan 'A2'; menamai yang menyatu sebagai 'A1'
+    # membuat keduanya satu seam yang sama, bukan dua seam yang bertabrakan.
+    # Penggantian dicatat di provenance dan ikut ke keluaran.
+    seam_aliases: dict[str, str] = Field(default_factory=dict)
+
     # Basis RD dinyatakan di sini karena berkasnya tidak berheader. Ia tidak
     # boleh disimpulkan dari nilainya.
     quality_rd_basis: RDBasis = "unknown"
