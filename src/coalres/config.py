@@ -226,6 +226,87 @@ class SeamPolicy(_Strict):
         return self
 
 
+class LegalStatus(_Strict):
+    """KCMI 4.6.1: legalitas. Tanpa ini Sumber daya tidak dapat dilaporkan."""
+
+    permit_type: Literal["IUP", "IUPK", "PKP2B", "KK", "lainnya"] | None = None
+    permit_valid_until: str = ""
+    permit_covers_mine_life: bool | None = None
+    cnc_certified: bool | None = None
+    # KCMI 4.6.1.3: data bor dari kawasan hutan wajib didukung IPPKH eksplorasi.
+    exploration_in_forest_area: bool | None = None
+    ippkh_exploration_held: bool | None = None
+
+
+class LandStatus(_Strict):
+    """KCMI 4.6.2: lahan dan tata ruang.
+
+    Pedoman menyatakan CPI TIDAK DAPAT melaporkan Sumber daya tambang terbuka
+    di Hutan Lindung, area konservasi, atau area lain yang terlarang untuk
+    penambangan. Ini larangan, bukan pertimbangan.
+    """
+
+    forest_category: Literal["APL", "hutan_produksi", "hutan_lindung",
+                             "konservasi", "campuran", "tidak_diketahui"] | None = None
+    # Poligon area terlarang (WKT). Dikeluarkan dari pelaporan.
+    prohibited_area_wkt: str = ""
+    prohibited_area_basis: str = ""
+    rtrw_allows_mining: bool | None = None
+    rtrw_basis: str = ""
+
+
+class MineabilityCutoffs(_Strict):
+    """KCMI 4.6.3.1: cut off parameters Sumber daya."""
+
+    min_mineable_thickness_m: float | None = Field(default=None, gt=0)
+    max_ash_pct: float | None = Field(default=None, ge=0, le=100)
+    max_total_sulphur_pct: float | None = Field(default=None, ge=0)
+    max_total_moisture_pct: float | None = Field(default=None, ge=0, le=100)
+    min_calorific_value: float | None = Field(default=None, gt=0)
+    apply_weathering_depth: bool = True
+
+
+class DepthLimit(_Strict):
+    """KCMI 4.6.3.2: batas maksimum kedalaman.
+
+    Pedoman menyebut tiga acuan yang sah: kedalaman pit pada BESR yang
+    diperdalam, surface hasil pit optimisasi pada harga tertinggi yang pernah
+    tercapai, atau rekomendasi studi geoteknik. Angka tanpa salah satu acuan itu
+    bukan batas ekonomi - ia tebakan yang tampak berwibawa.
+    """
+
+    max_depth_m: float | None = Field(default=None, gt=0)
+    basis_kind: Literal["besr_diperdalam", "pit_optimisasi_harga_tertinggi",
+                        "geoteknik", "lainnya"] | None = None
+    basis_note: str = ""
+
+    @model_validator(mode="after")
+    def _depth_needs_a_recognised_basis(self) -> "DepthLimit":
+        if self.max_depth_m is not None:
+            if self.basis_kind is None:
+                raise ValueError(
+                    "limits.depth.max_depth_m diisi tetapi basis_kind kosong. "
+                    "KCMI 4.6.3.2 menyebut acuan yang sah: BESR diperdalam, pit "
+                    "optimisasi pada harga tertinggi, atau studi geoteknik.")
+            if len(self.basis_note.strip()) < 40:
+                raise ValueError(
+                    "limits.depth.basis_note terlalu pendek (minimum 40 karakter).")
+        return self
+
+
+class Limits(_Strict):
+    """Tahap 9: seluruh batas KCMI 4.6 dalam satu blok."""
+
+    legal: LegalStatus = Field(default_factory=LegalStatus)
+    land: LandStatus = Field(default_factory=LandStatus)
+    cutoffs: MineabilityCutoffs = Field(default_factory=MineabilityCutoffs)
+    depth: DepthLimit = Field(default_factory=DepthLimit)
+    # Keputusan proyek yang tercatat: null berarti batas IUP TIDAK diterapkan.
+    iup_boundary_wkt: str | None = None
+    iup_boundary_basis: str = ""
+    apply_subcrop: bool = True
+
+
 class PoOSpec(_Strict):
     """Kriteria Titik Pengamatan menurut Pedoman Praktis KCMI 2017 pasal 4.5.2.
 
@@ -407,6 +488,7 @@ class Config(_Strict):
     weathering: WeatheringSpec = Field(default_factory=WeatheringSpec)
     observation_point: ObservationPointSpec = Field(default_factory=ObservationPointSpec)
     poo: PoOSpec = Field(default_factory=PoOSpec)
+    limits: Limits = Field(default_factory=Limits)
 
     classification_radii_m: RadiiTable
     cutoffs: Cutoffs
