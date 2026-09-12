@@ -193,7 +193,9 @@ def apply_to_model(model: SeamModel, cfg, weathering_depth_m: float | None,
         alive &= ~weathered
 
     # 4.6.3.2 - batas maksimum kedalaman, diukur dari topografi ke roof.
-    max_depth = limits.depth.max_depth_m
+    # Dibaca lewat cfg.max_depth_m supaya jalur lama dan jalur ini TIDAK PERNAH
+    # memakai angka yang berbeda.
+    max_depth = cfg.max_depth_m
     if max_depth is not None and topo is not None:
         gx, gy = np.meshgrid(model.roof.x, model.roof.y)
         surface = topo.sample(gx.ravel(), gy.ravel()).reshape(gx.shape)
@@ -235,11 +237,17 @@ def run(models: dict[str, SeamModel], cfg, topo=None,
             "dan catatan ini wajib muncul pada dokumen asumsi, laporan QA, dan "
             "header ringkasan Sumber daya.")
 
-    if cfg.limits.depth.max_depth_m is None:
+    if cfg.max_depth_m is None:
         report.warnings.append(
             "KCMI 4.6.3.2: batas maksimum kedalaman belum dinyatakan. Tanpa "
             "batas ekonomi, keluaran adalah INVENTORI BATUBARA, bukan Sumber "
             "daya.")
+    elif cfg.limits.depth.max_depth_m is None:
+        report.warnings.append(
+            f"KCMI 4.6.3.2: batas kedalaman {cfg.max_depth_m:g} m berasal dari "
+            "blok lama rpeee_constraints, yang TIDAK menuntut acuan yang diakui "
+            "pedoman (BESR diperdalam, pit optimisasi pada harga tertinggi, atau "
+            "studi geoteknik). Pindahkan ke limits.depth beserta basis_kind-nya.")
 
     for key, model in models.items():
         report.results.append(

@@ -523,6 +523,45 @@ class Config(_Strict):
         return text
 
     @model_validator(mode="after")
+    def _one_depth_limit_only(self) -> "Config":
+        """Batas kedalaman hanya boleh punya SATU sumber kebenaran.
+
+        `limits.depth` (KCMI 4.6.3.2) adalah yang otoritatif: hanya ia yang
+        menuntut acuan yang diakui pedoman. Blok `rpeee_constraints` yang lama
+        masih dibaca modul hilir, jadi ia DISINKRONKAN dari limits.depth.
+
+        Bila keduanya diisi dengan angka yang berbeda, run dihentikan. Dua batas
+        kedalaman yang berbeda di satu konfigurasi berarti dua angka sumberdaya
+        yang berbeda, dan yang mana yang keluar hanya bergantung pada modul mana
+        yang kebetulan dipanggil - persis kekeliruan tanpa gejala.
+        """
+        authoritative = self.limits.depth.max_depth_m
+        legacy = self.rpeee_constraints.max_depth_m
+
+        if authoritative is not None and legacy is not None \
+                and abs(authoritative - legacy) > 1e-9:
+            raise ValueError(
+                f"dua batas kedalaman yang berbeda: limits.depth.max_depth_m = "
+                f"{authoritative} m tetapi rpeee_constraints.max_depth_m = "
+                f"{legacy} m. Isi limits.depth saja - ia yang menuntut acuan "
+                "sesuai KCMI 4.6.3.2 - dan kosongkan rpeee_constraints.max_depth_m."
+            )
+
+        if authoritative is not None and legacy is None:
+            depth = self.limits.depth
+            object.__setattr__(self, "rpeee_constraints",
+                               self.rpeee_constraints.model_copy(update={
+                                   "max_depth_m": authoritative,
+                                   "max_depth_basis":
+                                       f"[{depth.basis_kind}] {depth.basis_note}"}))
+        return self
+
+    @property
+    def max_depth_m(self) -> float | None:
+        """Batas kedalaman yang berlaku, satu-satunya."""
+        return self.limits.depth.max_depth_m or self.rpeee_constraints.max_depth_m
+
+    @model_validator(mode="after")
     def _minex_spec_required(self) -> "Config":
         if self.input_format == "minex_flat" and self.minex is None:
             raise ValueError("input_format='minex_flat' menuntut blok 'minex'.")
